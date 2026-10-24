@@ -2,9 +2,8 @@ package com.benito.sells.entity;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import org.bson.types.ObjectId;
-
 import java.math.BigDecimal;
-import java.util.Date;
+import java.time.Instant;
 
 @MongoEntity(collection = "products")
 public class Product {
@@ -20,7 +19,7 @@ public class Product {
     //AUDIT FIELDS
     public boolean status;
     public String createdBy;
-    public Date createdAt;
+    public Instant createdAt;
     public String updatedBy;
-    public Date updatedAt;
+    public Instant updatedAt;
 }

@@ -1,5 +1,6 @@
 package com.benito.sells.service;
 
+import com.benito.sells.dto.ProductRequestDTO;
 import com.benito.sells.dto.ProductResponseDTO;
 import com.benito.sells.dto.ProductsPaginatedDTO;
 import com.benito.sells.entity.Product;
@@ -9,6 +10,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.NotFoundException;
 import org.bson.types.ObjectId;
 
+import java.time.Instant;
 import java.util.List;
 
 @ApplicationScoped
@@ -42,6 +44,24 @@ public class ProductService {
             throw new NotFoundException();
 
         return ProductResponseDTO.TurnIntoDTO(productFound);
+    }
+
+    //POST A NEW PRODUCT
+    public ProductResponseDTO createProduct(ProductRequestDTO requestProduct, String user)
+    {
+        Product newProduct = new Product();
+        newProduct.name = requestProduct.name;
+        newProduct.description = requestProduct.description;
+        newProduct.quantity = requestProduct.quantity;
+        newProduct.price = requestProduct.price;
+
+        newProduct.status = true;
+        newProduct.createdBy = user;
+        newProduct.createdAt = Instant.now();
+
+        _productRepository.persist(newProduct);
+
+        return ProductResponseDTO.TurnIntoDTO(newProduct);
     }
 
 }
