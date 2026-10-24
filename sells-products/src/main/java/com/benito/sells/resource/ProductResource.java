@@ -10,12 +10,19 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.jwt.JsonWebToken;
+import org.jboss.resteasy.reactive.RestResponse;
+
+import java.net.URI;
 
 @Path("api/v1/product")
 @Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
 public class ProductResource {
 
     //DEPENDECY INJECTION -> Service & jwt
@@ -29,6 +36,7 @@ public class ProductResource {
 
     @GET
     @PermitAll
+    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
     public ProductsPaginatedDTO getAllProducts(@QueryParam("page") @PositiveOrZero @DefaultValue("0") int page,
                                                @QueryParam("pageSize") @Positive @DefaultValue("10") int pageSize)
     {
@@ -39,20 +47,54 @@ public class ProductResource {
     @GET
     @Path("/{id}")
     @PermitAll
-    public ProductResponseDTO getProductById(String id)
+    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
+    public ProductResponseDTO getProductById(@PathParam("id") String id)
     {
-        if (!ObjectId.isValid(id))
-            throw new BadRequestException();
+        ObjectId validatedId = validateId(id);
 
-        return _productService.getProductById(new ObjectId(id));
+        //Quarkus return this with a 200 status code
+        return _productService.getProductById(validatedId);
     }
 
     @POST
     @RolesAllowed("admin")
-    public ProductResponseDTO createProduct(@Valid ProductRequestDTO requestProduct)
+    public RestResponse<ProductResponseDTO> createProduct(@Valid ProductRequestDTO requestProduct,
+                                                          @Context UriInfo uriInfo)
     {
-        return _productService.createProduct(requestProduct, jwt.getSubject());
+        ProductResponseDTO createdProduct = _productService.createProduct(requestProduct, jwt.getSubject());
+
+        URI location = uriInfo.getAbsolutePathBuilder()
+                              .path(createdProduct.id)
+                              .build();
+
+        return RestResponse.ResponseBuilder.<ProductResponseDTO>created(location)
+                                           .entity(createdProduct)
+                                           .build();
     }
+
+    @PUT
+    @Path("/{id}")
+    @RolesAllowed("admin")
+    public ProductResponseDTO updateProduct(@PathParam("id") String id, @Valid ProductRequestDTO requestProduct) {
+
+        ObjectId validatedId = validateId(id);
+
+        return _productService.updateProduct(validatedId, requestProduct, jwt.getSubject());
+    }
+
+    @DELETE
+    //TODO
+
+
+    //HELPER
+    private ObjectId validateId(String id)
+    {
+        if (!ObjectId.isValid(id))
+            throw new BadRequestException();
+
+        return new ObjectId(id);
+    }
+
 
 
 }

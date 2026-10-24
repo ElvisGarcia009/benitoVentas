@@ -7,13 +7,13 @@ import java.math.BigDecimal;
 
 public class ProductResponseDTO {
 
-    public ObjectId id;
+    public String id;
     public String name;
     public String description;
     public int quantity;
     public BigDecimal price;
 
-    public ProductResponseDTO(ObjectId id, String name, String description, int quantity, BigDecimal price)
+    public ProductResponseDTO(String id, String name, String description, int quantity, BigDecimal price)
     {
         this.id = id;
         this.name = name;
@@ -24,11 +24,11 @@ public class ProductResponseDTO {
 
     public static ProductResponseDTO TurnIntoDTO(Product product)
     {
-        return new ProductResponseDTO(product.id,
-                product.name,
-                product.description,
-                product.quantity,
-                product.price);
+        return new ProductResponseDTO(product.id.toString(),
+                                    product.name,
+                                    product.description,
+                                    product.quantity,
+                                    product.price);
     }
 
 }
