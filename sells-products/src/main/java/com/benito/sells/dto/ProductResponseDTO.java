@@ -5,7 +5,7 @@ import org.bson.types.ObjectId;
 
 import java.math.BigDecimal;
 
-public class ProductDTO {
+public class ProductResponseDTO {
 
     public ObjectId id;
     public String name;
@@ -13,7 +13,7 @@ public class ProductDTO {
     public int quantity;
     public BigDecimal price;
 
-    public ProductDTO(ObjectId id, String name, String description, int quantity, BigDecimal price)
+    public ProductResponseDTO(ObjectId id, String name, String description, int quantity, BigDecimal price)
     {
         this.id = id;
         this.name = name;
@@ -22,9 +22,9 @@ public class ProductDTO {
         this.price = price;
     }
 
-    public static ProductDTO TurnIntoDTO(Product product)
+    public static ProductResponseDTO TurnIntoDTO(Product product)
     {
-        return new ProductDTO(product.id,
+        return new ProductResponseDTO(product.id,
                 product.name,
                 product.description,
                 product.quantity,
