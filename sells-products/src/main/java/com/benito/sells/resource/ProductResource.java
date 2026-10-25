@@ -8,6 +8,7 @@ import com.benito.sells.service.ProductService;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.ws.rs.*;
@@ -38,7 +39,7 @@ public class ProductResource {
     @PermitAll
     //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
     public ProductsPaginatedDTO getAllProducts(@QueryParam("page") @PositiveOrZero @DefaultValue("0") int page,
-                                               @QueryParam("pageSize") @Positive @DefaultValue("10") int pageSize)
+                                               @QueryParam("pageSize") @Positive @DefaultValue("10") @Max(30) int pageSize)
     {
         //Quarkus return this with a 200 status code
         return _productService.getAllProducts(page, pageSize);

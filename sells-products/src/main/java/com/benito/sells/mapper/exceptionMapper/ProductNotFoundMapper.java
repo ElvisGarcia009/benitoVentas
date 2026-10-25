@@ -1,7 +1,7 @@
-package com.benito.sells.mapper;
+package com.benito.sells.mapper.exceptionMapper;
 
-import com.benito.sells.dto.ErrorDTO;
 import com.benito.sells.exception.ProductNotFoundException;
+import com.benito.sells.helper.ErrorResponseBuilder;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -12,11 +12,10 @@ public class ProductNotFoundMapper implements ExceptionMapper<ProductNotFoundExc
     @Override
     public Response toResponse(ProductNotFoundException exception) {
 
-        ErrorDTO error = new ErrorDTO("NOT FOUND",
-                                               exception.getMessage(),
-                                               404);
+        return ErrorResponseBuilder.build("NOT FOUND",
+                                         exception.getMessage(),
+                                         404);
 
-        return Response.status(error.errorStatusCode).entity(error).build();
     }
 
 }

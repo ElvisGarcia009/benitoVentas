@@ -1,6 +1,6 @@
-package com.benito.sells.mapper;
+package com.benito.sells.mapper.exceptionMapper;
 
-import com.benito.sells.dto.ErrorDTO;
+import com.benito.sells.helper.ErrorResponseBuilder;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
@@ -18,10 +18,8 @@ public class ConstraintViolationMapper implements ExceptionMapper<ConstraintViol
                     .map(constraintViolation -> constraintViolation.getPropertyPath() + ": " + constraintViolation.getMessage())
                     .collect(Collectors.joining(", "));
 
-        ErrorDTO error = new ErrorDTO("BAD REQUEST",
-                                       errorMessage,
-                                      500);
-
-        return Response.status(error.errorStatusCode).entity(error).build();
+        return ErrorResponseBuilder.build("BAD REQUEST",
+                                          errorMessage,
+                                         500);
     }
 }

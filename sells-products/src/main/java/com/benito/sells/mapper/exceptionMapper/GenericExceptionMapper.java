@@ -1,6 +1,6 @@
-package com.benito.sells.mapper;
+package com.benito.sells.mapper.exceptionMapper;
 
-import com.benito.sells.dto.ErrorDTO;
+import com.benito.sells.helper.ErrorResponseBuilder;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
@@ -21,10 +21,8 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception>
         //LOG THE ERROR TO THE SERVER CONSOLE
         LOG.error("Error not expected: ", exception);
 
-        ErrorDTO error = new ErrorDTO("INTERNAL SERVER ERROR",
-                "An unexpected error has happened",
-                500);
-
-        return Response.status(error.errorStatusCode).entity(error).build();
+        return ErrorResponseBuilder.build("INTERNAL SERVER ERROR",
+                                        "An unexpected error has happened",
+                                        500);
     }
 }

@@ -1,7 +1,7 @@
-package com.benito.sells.mapper;
+package com.benito.sells.mapper.exceptionMapper;
 
-import com.benito.sells.dto.ErrorDTO;
 import com.benito.sells.exception.InvalidIdException;
+import com.benito.sells.helper.ErrorResponseBuilder;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -12,10 +12,8 @@ public class InvalidIdMapper implements ExceptionMapper<InvalidIdException> {
     @Override
     public Response toResponse(InvalidIdException exception) {
 
-        ErrorDTO error = new ErrorDTO("BAD REQUEST",
-                                               exception.getMessage(),
-                                               400);
-
-        return Response.status(error.errorStatusCode).entity(error).build();
+        return ErrorResponseBuilder.build("BAD REQUEST",
+                exception.getMessage(),
+                400);
     }
 }
