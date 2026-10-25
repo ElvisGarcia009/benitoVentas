@@ -4,11 +4,11 @@ import com.benito.sells.dto.ProductRequestDTO;
 import com.benito.sells.dto.ProductResponseDTO;
 import com.benito.sells.dto.ProductsPaginatedDTO;
 import com.benito.sells.entity.Product;
+import com.benito.sells.exception.ProductNotFoundException;
 import com.benito.sells.repository.ProductRepository;
 import io.quarkus.mongodb.panache.PanacheQuery;
+import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.NotAuthorizedException;
-import jakarta.ws.rs.NotFoundException;
 import org.bson.types.ObjectId;
 
 import java.time.Instant;
@@ -27,28 +27,28 @@ public class ProductService {
     //GET ALL PRODUCTS, PAGINATED
     public ProductsPaginatedDTO getAllProducts(int page, int pageSize)
     {
-        PanacheQuery<Product> query = _productRepository.findAll().page(page, pageSize);
+        PanacheQuery<Product> query = _productRepository.findAll(Sort.by("name").ascending()).page(page, pageSize);
 
-        List<Product> products = query.stream().toList();
+        List<Product> products = query.stream().filter(product -> product.status).toList();
         int totalPages = query.pageCount();
         long totalProducts = query.count();
 
         return new ProductsPaginatedDTO(products, page, pageSize, totalPages, totalProducts);
     }
 
+
+
     //GET A PRODUCT BY ID
     public ProductResponseDTO getProductById(ObjectId id)
     {
-        Product productFound = _productRepository.findById(id);
-
-        if (productFound == null)
-            throw new NotFoundException();
-
+        Product productFound = findValidProduct(id);
         return ProductResponseDTO.TurnIntoDTO(productFound);
     }
 
+
+
     //POST A NEW PRODUCT
-    public ProductResponseDTO createProduct(ProductRequestDTO requestProduct, String user)
+    public ProductResponseDTO createProduct(ProductRequestDTO requestProduct, String username)
     {
         Product newProduct = new Product();
         newProduct.name = requestProduct.name;
@@ -58,7 +58,7 @@ public class ProductService {
 
         //AUDIT FIELDS
         newProduct.status = true;
-        newProduct.createdBy = user;
+        newProduct.createdBy = username;
         newProduct.createdAt = Instant.now();
 
         _productRepository.persist(newProduct);
@@ -66,13 +66,12 @@ public class ProductService {
         return ProductResponseDTO.TurnIntoDTO(newProduct);
     }
 
-    //PUT, UPDATE A PRODUCT
-    public ProductResponseDTO updateProduct(ObjectId id, ProductRequestDTO requestProduct, String user)
-    {
-        Product productFound = _productRepository.findById(id);
 
-        if (productFound == null)
-            throw new NotFoundException();
+
+    //PUT, UPDATE A PRODUCT
+    public ProductResponseDTO updateProduct(ObjectId id, ProductRequestDTO requestProduct, String username)
+    {
+        Product productFound = findValidProduct(id);
 
         productFound.name = requestProduct.name;
         productFound.description = requestProduct.description;
@@ -80,7 +79,7 @@ public class ProductService {
         productFound.price = requestProduct.price;
 
         //AUDIT FIELDS
-        productFound.updatedBy = user;
+        productFound.updatedBy = username;
         productFound.updatedAt = Instant.now();
 
         _productRepository.update(productFound);
@@ -88,4 +87,31 @@ public class ProductService {
         return ProductResponseDTO.TurnIntoDTO(productFound);
     }
 
+
+
+    //DELETE A PRODUCT (this method just deactivate the product)
+    public void deleteProduct(ObjectId id, String username)
+    {
+        Product productFound = findValidProduct(id);
+
+        productFound.status = false;
+        productFound.updatedBy = username;
+        productFound.updatedAt = Instant.now();
+
+        _productRepository.update(productFound);
+
+    }
+
+
+
+    //HELPER
+    public Product findValidProduct(ObjectId id)
+    {
+        Product productContainer = _productRepository.findById(id);
+
+        if (productContainer == null || !productContainer.status)
+            throw new ProductNotFoundException(id);
+
+        return productContainer;
+    }
 }

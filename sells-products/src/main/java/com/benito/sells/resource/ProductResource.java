@@ -3,6 +3,7 @@ package com.benito.sells.resource;
 import com.benito.sells.dto.ProductRequestDTO;
 import com.benito.sells.dto.ProductResponseDTO;
 import com.benito.sells.dto.ProductsPaginatedDTO;
+import com.benito.sells.exception.InvalidIdException;
 import com.benito.sells.service.ProductService;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
@@ -12,7 +13,6 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.jwt.JsonWebToken;
@@ -25,7 +25,7 @@ import java.net.URI;
 @Consumes(MediaType.APPLICATION_JSON)
 public class ProductResource {
 
-    //DEPENDECY INJECTION -> Service & jwt
+    //DEPENDENCY INJECTION -> Service & jwt
     private final ProductService _productService;
     private final JsonWebToken jwt;
     public ProductResource(ProductService productService, JsonWebToken jwt)
@@ -56,6 +56,7 @@ public class ProductResource {
         return _productService.getProductById(validatedId);
     }
 
+
     @POST
     @RolesAllowed("admin")
     public RestResponse<ProductResponseDTO> createProduct(@Valid ProductRequestDTO requestProduct,
@@ -79,22 +80,30 @@ public class ProductResource {
 
         ObjectId validatedId = validateId(id);
 
+        //Quarkus return this with a 200 status code
         return _productService.updateProduct(validatedId, requestProduct, jwt.getSubject());
     }
 
+
     @DELETE
-    //TODO
+    @Path("/{id}")
+    @RolesAllowed("admin")
+    public RestResponse<Void> deleteProduct(@PathParam("id") String id)
+    {
+        ObjectId validatedId = validateId(id);
+        _productService.deleteProduct(validatedId, jwt.getSubject());
+        return RestResponse.noContent();
+    }
+
+
 
 
     //HELPER
     private ObjectId validateId(String id)
     {
         if (!ObjectId.isValid(id))
-            throw new BadRequestException();
+            throw new InvalidIdException(id);
 
         return new ObjectId(id);
     }
-
-
-
 }
