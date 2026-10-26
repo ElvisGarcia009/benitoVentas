@@ -4,8 +4,11 @@ import com.benito.sells.dto.ClientRequestDTO;
 import com.benito.sells.dto.ClientResponseDTO;
 import com.benito.sells.dto.ClientUpdateRequestDTO;
 import com.benito.sells.dto.ClientsPaginatedDTO;
+import com.benito.sells.exception.ClientAccessDeniedException;
 import com.benito.sells.exception.InvalidIdException;
 import com.benito.sells.service.ClientService;
+import io.quarkiverse.bucket4j.runtime.RateLimited;
+import io.quarkiverse.bucket4j.runtime.resolver.IpResolver;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
@@ -48,11 +51,12 @@ public class ClientResource {
     @GET
     @Path("/{id}")
     @RolesAllowed({"admin", "client"})
-    //TODO: THE CLIENT CAN ONLY ASK FOR HIS OWN INFORMATION.
-    //NOTE: TO EXTRACT THE ID OF THE REQUEST USE jwt.getClaim("userId")
     public ClientResponseDTO getClientById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
+
+        if (!jwt.getGroups().contains("admin"))
+            clientAccessVerification(id);
 
         //Quarkus return this with a 200 status code
         return _clientService.getClientById(validatedId);
@@ -61,7 +65,7 @@ public class ClientResource {
 
     @POST
     @PermitAll //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
-    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
+    @RateLimited(bucket = "registration", identityResolver = IpResolver.class)
     public RestResponse<ClientResponseDTO> createClient(@Valid ClientRequestDTO requestClient,
                                                         @Context UriInfo uriInfo)
     {
@@ -79,10 +83,12 @@ public class ClientResource {
     @PUT
     @Path("/{id}")
     @RolesAllowed({"admin", "client"})
-    //TODO: THE CLIENT CAN ONLY UPDATE HIS OWN INFORMATION.
     public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientUpdateRequestDTO requestClient) {
 
         ObjectId validatedId = validateId(id);
+
+        if (!jwt.getGroups().contains("admin"))
+            clientAccessVerification(id);
 
         //Quarkus return this with a 200 status code
         return _clientService.updateClient(validatedId, requestClient, jwt.getSubject());
@@ -102,12 +108,18 @@ public class ClientResource {
 
 
 
-    //HELPER
+    //HELPERS
     private ObjectId validateId(String id)
     {
         if (!ObjectId.isValid(id))
             throw new InvalidIdException(id);
 
         return new ObjectId(id);
+    }
+
+    private void clientAccessVerification(String id)
+    {
+        if(!id.equals(jwt.getClaim("userId")))
+            throw new ClientAccessDeniedException();
     }
 }

@@ -5,6 +5,8 @@ import com.benito.sells.dto.ProductResponseDTO;
 import com.benito.sells.dto.ProductsPaginatedDTO;
 import com.benito.sells.exception.InvalidIdException;
 import com.benito.sells.service.ProductService;
+import io.quarkiverse.bucket4j.runtime.RateLimited;
+import io.quarkiverse.bucket4j.runtime.resolver.IpResolver;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
@@ -37,7 +39,7 @@ public class ProductResource {
 
     @GET
     @PermitAll
-    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
+    @RateLimited(bucket = "unauthenticatedResource", identityResolver = IpResolver.class)
     public ProductsPaginatedDTO getAllProducts(@QueryParam("page") @PositiveOrZero @DefaultValue("0") int page,
                                                @QueryParam("pageSize") @Positive @DefaultValue("10") @Max(30) int pageSize)
     {
@@ -48,7 +50,7 @@ public class ProductResource {
     @GET
     @Path("/{id}")
     @PermitAll
-    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
+    @RateLimited(bucket = "unauthenticatedResource", identityResolver = IpResolver.class)
     public ProductResponseDTO getProductById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
