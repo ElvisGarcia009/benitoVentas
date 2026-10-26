@@ -7,11 +7,11 @@ import java.math.BigDecimal;
 public class ProductRequestDTO {
 
     @NotBlank(message = "name cannot be empty")
-    @Max(value = 100, message = "name cannot be longer than 100 characters")
+    @Size(max = 100, message = "name cannot be longer than 100 characters")
     public String name;
 
     @NotBlank(message = "description cannot be empty")
-    @Max(value = 500, message = "name cannot be longer than 500 characters")
+    @Size(max = 30, message = "name cannot be longer than 500 characters")
     public String description;
 
     @PositiveOrZero(message = "quantity cannot be negative")
