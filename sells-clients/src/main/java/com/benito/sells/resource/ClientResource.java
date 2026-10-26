@@ -2,9 +2,11 @@ package com.benito.sells.resource;
 
 import com.benito.sells.dto.ClientRequestDTO;
 import com.benito.sells.dto.ClientResponseDTO;
+import com.benito.sells.dto.ClientUpdateRequestDTO;
 import com.benito.sells.dto.ClientsPaginatedDTO;
 import com.benito.sells.exception.InvalidIdException;
 import com.benito.sells.service.ClientService;
+import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -45,7 +47,9 @@ public class ClientResource {
 
     @GET
     @Path("/{id}")
-    @RolesAllowed("admin")
+    @RolesAllowed({"admin", "client"})
+    //TODO: THE CLIENT CAN ONLY ASK FOR HIS OWN INFORMATION.
+    //NOTE: TO EXTRACT THE ID OF THE REQUEST USE jwt.getClaim("userId")
     public ClientResponseDTO getClientById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
@@ -56,7 +60,8 @@ public class ClientResource {
 
 
     @POST
-    @RolesAllowed("admin")
+    @PermitAll //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
+    //TODO: RATE-LIMIT OR USE ANY CONSTRAINT METHOD TO PREVENT A MASSIVE AMOUNT OF REQUESTS IN THIS UNAUTHENTICATED RESOURCE
     public RestResponse<ClientResponseDTO> createClient(@Valid ClientRequestDTO requestClient,
                                                         @Context UriInfo uriInfo)
     {
@@ -73,8 +78,9 @@ public class ClientResource {
 
     @PUT
     @Path("/{id}")
-    @RolesAllowed("admin")
-    public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientRequestDTO requestClient) {
+    @RolesAllowed({"admin", "client"})
+    //TODO: THE CLIENT CAN ONLY UPDATE HIS OWN INFORMATION.
+    public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientUpdateRequestDTO requestClient) {
 
         ObjectId validatedId = validateId(id);
 

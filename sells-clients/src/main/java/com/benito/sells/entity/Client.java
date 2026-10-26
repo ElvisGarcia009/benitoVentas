@@ -15,6 +15,7 @@ public class Client {
     public String name;
     public String lastName;
     public String email;
+    public String passwordHashed;
     public String phone;
     public String address;
     public BigDecimal balance;

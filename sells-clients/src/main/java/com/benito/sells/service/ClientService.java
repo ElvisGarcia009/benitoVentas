@@ -2,15 +2,16 @@ package com.benito.sells.service;
 
 import com.benito.sells.dto.ClientRequestDTO;
 import com.benito.sells.dto.ClientResponseDTO;
+import com.benito.sells.dto.ClientUpdateRequestDTO;
 import com.benito.sells.dto.ClientsPaginatedDTO;
 import com.benito.sells.entity.Client;
 import com.benito.sells.exception.ClientNotFoundException;
 import com.benito.sells.repository.ClientRepository;
+import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.mongodb.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
-
 import java.time.Instant;
 import java.util.List;
 
@@ -27,15 +28,17 @@ public class ClientService {
     //GET ALL CLIENTS, PAGINATED
     public ClientsPaginatedDTO getAllClients(int page, int pageSize)
     {
-        PanacheQuery<Client> query = _clientRepository.findAll(Sort.by("name").ascending()).page(page, pageSize);
+        PanacheQuery<Client> query = _clientRepository.findAll(Sort.by("name").ascending().and("lastName").ascending())
+                                                      .page(page, pageSize);
 
-        List<Client> clients = query.stream().filter(client -> client.status).toList();
+        List<ClientResponseDTO> clients = query.stream().filter(client -> client.status)
+                                                        .map(ClientResponseDTO::TurnIntoDTO)
+                                                        .toList();
         int totalPages = query.pageCount();
         long totalClients = query.count();
 
         return new ClientsPaginatedDTO(clients, page, pageSize, totalPages, totalClients);
     }
-
 
 
     //GET A CLIENT BY ID
@@ -46,23 +49,16 @@ public class ClientService {
     }
 
 
-
     //POST A NEW CLIENT
+    //TODO: CHECK USERNAME/EMAIL BEFOREHAND TO AVOID DUPLICATES
     public ClientResponseDTO createClient(ClientRequestDTO requestClient, String username)
     {
         Client newClient = new Client();
-        newClient.username = requestClient.username;
-        newClient.name = requestClient.name;
-        newClient.lastName = requestClient.lastName;
-        newClient.email = requestClient.email;
-        newClient.phone = requestClient.phone;
-        newClient.address = requestClient.address;
-        newClient.balance = requestClient.balance;
 
-        //AUDIT FIELDS
-        newClient.status = true;
-        newClient.createdBy = username;
-        newClient.createdAt = Instant.now();
+        if (username == null)
+            username = "self-registration";
+
+        mapRequestToClient(newClient, requestClient, username);
 
         _clientRepository.persist(newClient);
 
@@ -70,28 +66,17 @@ public class ClientService {
     }
 
 
-
     //PUT, UPDATE A CLIENT
-    public ClientResponseDTO updateClient(ObjectId id, ClientRequestDTO requestClient, String username)
+    public ClientResponseDTO updateClient(ObjectId id, ClientUpdateRequestDTO requestClient, String username)
     {
         Client clientFound = findValidClient(id);
-
-        clientFound.username = requestClient.username;
-        clientFound.name = requestClient.name;
-        clientFound.lastName = requestClient.lastName;
-        clientFound.email = requestClient.email;
-        clientFound.phone = requestClient.phone;
-        clientFound.address = requestClient.address;
-        clientFound.balance = requestClient.balance;
-
-        //AUDIT FIELDS
-        clientFound.updatedBy = username;
-        clientFound.updatedAt = Instant.now();
+        mapRequestUpdateToClient(clientFound, requestClient, username);
 
         _clientRepository.update(clientFound);
 
         return ClientResponseDTO.TurnIntoDTO(clientFound);
     }
+
 
     //DELETE A CLIENT (this method just deactivate the client)
     public void deleteClient(ObjectId id, String username)
@@ -106,7 +91,10 @@ public class ClientService {
 
     }
 
-    //HELPER
+
+
+
+    //HELPERS
     public Client findValidClient(ObjectId id)
     {
         Client clientContainer = _clientRepository.findById(id);
@@ -116,4 +104,38 @@ public class ClientService {
 
         return clientContainer;
     }
+
+    public void mapRequestToClient(Client client, ClientRequestDTO requestClient, String username)
+    {
+        //MAIN FIELDS
+        client.username = requestClient.username;
+        client.name = requestClient.name;
+        client.lastName = requestClient.lastName;
+        client.email = requestClient.email;
+        client.passwordHashed = BcryptUtil.bcryptHash(requestClient.password);
+        client.phone = requestClient.phone;
+        client.address = requestClient.address;
+        client.balance = requestClient.balance;
+
+        //AUDIT FIELDS
+        client.status = true;
+        client.createdBy = username;
+        client.createdAt = Instant.now();
+    }
+
+    public void mapRequestUpdateToClient(Client client, ClientUpdateRequestDTO requestClient, String username)
+    {
+        //NOTE: USERNAME AND EMAIL CANNOT BE UPDATED, THEY OUGHT TO BE STATIC ONCE SETTLED
+        client.name = requestClient.name;
+        client.lastName = requestClient.lastName;
+        client.phone = requestClient.phone;
+        client.address = requestClient.address;
+        client.balance = requestClient.balance;
+
+        //AUDIT FIELDS
+        client.updatedBy = username;
+        client.updatedAt = Instant.now();
+    }
+
+
 }

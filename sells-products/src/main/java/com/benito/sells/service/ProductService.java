@@ -29,7 +29,9 @@ public class ProductService {
     {
         PanacheQuery<Product> query = _productRepository.findAll(Sort.by("name").ascending()).page(page, pageSize);
 
-        List<Product> products = query.stream().filter(product -> product.status).toList();
+        List<ProductResponseDTO> products = query.stream().filter(product -> product.status)
+                                                 .map(ProductResponseDTO::TurnIntoDTO)
+                                                 .toList();
         int totalPages = query.pageCount();
         long totalProducts = query.count();
 

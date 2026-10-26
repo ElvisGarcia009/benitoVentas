@@ -24,6 +24,12 @@ public class ClientRequestDTO {
     @Size(max = 100, message = "email cannot be longer than 100 characters")
     public String email;
 
+    @NotBlank
+    @Size(min = 8, max = 72, message = "password must be longer than 8 characters")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).*$",
+             message = "password must contain at least one lowercase letter, one uppercase letter, one number and one special character")
+    public String password;
+
     @Size(max = 20, message = "phone cannot be longer than 20 characters")
     public String phone;
 
@@ -31,6 +37,6 @@ public class ClientRequestDTO {
     public String address;
 
     @PositiveOrZero(message = "balance cannot be negative")
-    @DefaultValue("0.00")
+    @DefaultValue("0")
     public BigDecimal balance;
 }
