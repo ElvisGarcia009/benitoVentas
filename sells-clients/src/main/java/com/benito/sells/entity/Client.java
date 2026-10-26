@@ -5,17 +5,16 @@ import org.bson.types.ObjectId;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Set;
 
 @MongoEntity(collection = "clients")
 public class Client {
 
     //MAIN FIELDS
     public ObjectId id;
-    public String username;
+    public String userId; // REFERENCE TO USER DOCUMENT
     public String name;
     public String lastName;
-    public String email;
-    public String passwordHashed;
     public String phone;
     public String address;
     public BigDecimal balance;

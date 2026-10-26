@@ -82,7 +82,7 @@ public class ClientResource {
 
     @PUT
     @Path("/{id}")
-    @RolesAllowed({"admin", "client"})
+    @RolesAllowed({"admin", "client"}) //NOTE: CLIENT CAN UPDATE HIS INFORMATION
     public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientUpdateRequestDTO requestClient) {
 
         ObjectId validatedId = validateId(id);
@@ -93,7 +93,6 @@ public class ClientResource {
         //Quarkus return this with a 200 status code
         return _clientService.updateClient(validatedId, requestClient, jwt.getSubject());
     }
-
 
     @DELETE
     @Path("/{id}")

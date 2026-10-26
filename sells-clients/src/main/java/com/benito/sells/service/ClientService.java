@@ -6,13 +6,12 @@ import com.benito.sells.dto.ClientUpdateRequestDTO;
 import com.benito.sells.dto.ClientsPaginatedDTO;
 import com.benito.sells.entity.Client;
 import com.benito.sells.exception.ClientNotFoundException;
-import com.benito.sells.exception.ConflictException;
 import com.benito.sells.repository.ClientRepository;
-import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.mongodb.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
+
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -58,14 +57,6 @@ public class ClientService {
     //POST A NEW CLIENT
     public ClientResponseDTO createClient(ClientRequestDTO requestClient, String username)
     {
-        long duplicatesCount = _clientRepository.count("(username = ?1 or email = ?2) and status = ?3",
-                                                         requestClient.username,
-                                                                  requestClient.email,
-                                                                  true);
-
-        if (duplicatesCount > 0)
-            throw new ConflictException();
-
         Client newClient = new Client();
 
         if (username == null)
@@ -121,11 +112,8 @@ public class ClientService {
     public void mapRequestToClient(Client client, ClientRequestDTO requestClient, String username)
     {
         //MAIN FIELDS
-        client.username = requestClient.username;
         client.name = requestClient.name;
         client.lastName = requestClient.lastName;
-        client.email = requestClient.email;
-        client.passwordHashed = BcryptUtil.bcryptHash(requestClient.password);
         client.phone = requestClient.phone;
         client.address = requestClient.address;
         client.balance = requestClient.balance == null ? BigDecimal.valueOf(0) : requestClient.balance;

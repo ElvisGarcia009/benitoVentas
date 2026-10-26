@@ -7,13 +7,12 @@ import java.math.BigDecimal;
 
 public class ClientRequestDTO {
 
-    @NotBlank(message = "username cannot be empty")
-    @Size(max = 30, message = "username cannot be longer than 30 characters")
-    public String username;
-
     @NotBlank(message = "name cannot be empty")
     @Size(max = 50, message = "name cannot be longer than 50 characters")
     public String name;
+
+    @NotBlank(message = "userID cannot be empty")
+    public String userId;
 
     @NotBlank(message = "lastName cannot be empty")
     @Size(max = 50, message = "lastName cannot be longer than 50 characters")
@@ -23,12 +22,6 @@ public class ClientRequestDTO {
     @Email(message = "email is not valid")
     @Size(max = 100, message = "email cannot be longer than 100 characters")
     public String email;
-
-    @NotBlank(message = "password cannot be empty")
-    @Size(min = 8, max = 72, message = "password must be longer than 8 characters")
-    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).*$",
-             message = "password must contain at least one lowercase letter, one uppercase letter, one number and one special character")
-    public String password;
 
     @Size(max = 20, message = "phone cannot be longer than 20 characters")
     public String phone;
