@@ -6,6 +6,7 @@ import com.benito.sells.dto.TokenResponseDTO;
 import com.benito.sells.service.AuthService;
 import io.quarkiverse.bucket4j.runtime.RateLimited;
 import io.quarkiverse.bucket4j.runtime.resolver.IpResolver;
+import io.quarkus.security.PermissionsAllowed;
 import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
@@ -19,6 +20,7 @@ import org.jboss.resteasy.reactive.RestResponse;
 @Path("api/v1/auth")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
+@PermitAll
 public class AuthResource {
 
     //DEPENDENCY INJECTION -> Service
@@ -31,7 +33,7 @@ public class AuthResource {
 
     @POST
     @Path("/register")
-    @PermitAll //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
+    //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
     @RateLimited(bucket = "authentication", identityResolver = IpResolver.class)
     public RestResponse<Void> register(@Valid RegisterRequestDTO registerRequest)
     {
@@ -41,7 +43,6 @@ public class AuthResource {
 
     @POST
     @Path("/login")
-    @PermitAll
     @RateLimited(bucket = "authentication", identityResolver = IpResolver.class)
     public TokenResponseDTO login(@Valid LoginRequestDTO loginRequest)
     {

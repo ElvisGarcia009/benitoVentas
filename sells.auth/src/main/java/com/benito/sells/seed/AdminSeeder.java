@@ -23,7 +23,7 @@ public class AdminSeeder {
     private final String adminPassword;
 
     public AdminSeeder(UserRepository userRepository,
-                       @ConfigProperty(name = "quarkus.seeder.adminPassword") String adminPassword)
+                       @ConfigProperty(name = "user.seeder.adminPassword") String adminPassword)
     {
         this._userRepository = userRepository;
         this.adminPassword = adminPassword;
