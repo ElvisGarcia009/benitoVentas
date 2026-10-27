@@ -27,11 +27,10 @@ public class ProductService {
     //GET ALL PRODUCTS, PAGINATED
     public ProductsPaginatedDTO getAllProducts(int page, int pageSize)
     {
-        PanacheQuery<Product> query = _productRepository.findAll(Sort.by("name").ascending()).page(page, pageSize);
+        PanacheQuery<Product> query = _productRepository.find("status", Sort.by("name").ascending(), true)
+                                                        .page(page, pageSize);
 
-        List<ProductResponseDTO> products = query.stream().filter(product -> product.status)
-                                                 .map(ProductResponseDTO::TurnIntoDTO)
-                                                 .toList();
+        List<ProductResponseDTO> products = query.stream().map(ProductResponseDTO::TurnIntoDTO).toList();
         int totalPages = query.pageCount();
         long totalProducts = query.count();
 

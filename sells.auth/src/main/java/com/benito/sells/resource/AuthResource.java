@@ -4,18 +4,16 @@ import com.benito.sells.dto.LoginRequestDTO;
 import com.benito.sells.dto.RegisterRequestDTO;
 import com.benito.sells.dto.TokenResponseDTO;
 import com.benito.sells.service.AuthService;
+import io.quarkiverse.bucket4j.runtime.RateLimited;
+import io.quarkiverse.bucket4j.runtime.resolver.IpResolver;
 import jakarta.annotation.security.PermitAll;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.UriInfo;
 import org.jboss.resteasy.reactive.RestResponse;
-
-import java.awt.*;
 
 
 @Path("api/v1/auth")
@@ -23,6 +21,7 @@ import java.awt.*;
 @Produces(MediaType.APPLICATION_JSON)
 public class AuthResource {
 
+    //DEPENDENCY INJECTION -> Service
     private final AuthService _authService;
 
     public AuthResource(AuthService authService)
@@ -32,22 +31,21 @@ public class AuthResource {
 
     @POST
     @Path("/register")
-    public RestResponse<Void> register(@Valid RegisterRequestDTO registerRequest,
-                                       @Context UriInfo uriInfo)
+    @PermitAll //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
+    @RateLimited(bucket = "authentication", identityResolver = IpResolver.class)
+    public RestResponse<Void> register(@Valid RegisterRequestDTO registerRequest)
     {
-         _authService.register(registerRequest);
+        _authService.register(registerRequest);
         return RestResponse.noContent();
     }
 
-//    @POST
-//    @Path("/login")
-//    @PermitAll
-//    public RestResponse<TokenResponseDTO> login(@Valid LoginRequestDTO loginRequest)
-//    {
-//        //TokenResponseDTO accessToken = _authService.login(loginRequest);
-//
-//        return RestResponse.ok(accessToken);
-//    }
-
-
+    @POST
+    @Path("/login")
+    @PermitAll
+    @RateLimited(bucket = "authentication", identityResolver = IpResolver.class)
+    public TokenResponseDTO login(@Valid LoginRequestDTO loginRequest)
+    {
+        //Quarkus return this with a 200 status code
+        return _authService.login(loginRequest);
+    }
 }

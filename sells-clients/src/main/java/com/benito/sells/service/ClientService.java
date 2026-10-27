@@ -30,12 +30,11 @@ public class ClientService {
     //GET ALL CLIENTS, PAGINATED
     public ClientsPaginatedDTO getAllClients(int page, int pageSize)
     {
-        PanacheQuery<Client> query = _clientRepository.findAll(Sort.by("name").ascending().and("lastName").ascending())
-                                                      .page(page, pageSize);
+        PanacheQuery<Client> query = _clientRepository.find("status", Sort.by("name").ascending()
+                                                                                .and("lastName").ascending(),
+                                                            true).page(page, pageSize);
 
-        List<ClientResponseDTO> clients = query.stream().filter(client -> client.status)
-                                                        .map(ClientResponseDTO::TurnIntoDTO)
-                                                        .toList();
+        List<ClientResponseDTO> clients = query.stream().map(ClientResponseDTO::TurnIntoDTO).toList();
         int totalPages = query.pageCount();
         long totalClients = query.count();
 
@@ -47,8 +46,6 @@ public class ClientService {
     public ClientResponseDTO getClientById(ObjectId id)
     {
         Client clientFound = findValidClient(id);
-
-
 
         return ClientResponseDTO.TurnIntoDTO(clientFound);
     }
@@ -116,7 +113,8 @@ public class ClientService {
         client.lastName = requestClient.lastName;
         client.phone = requestClient.phone;
         client.address = requestClient.address;
-        client.balance = requestClient.balance == null ? BigDecimal.valueOf(0) : requestClient.balance;
+                                                         //READ THE CLIENT REQUEST DTO for more info about the balance
+        //client.balance = requestClient.balance == null ? BigDecimal.valueOf(0) : requestClient.balance;
 
         //AUDIT FIELDS
         client.status = true;

@@ -9,16 +9,26 @@ import java.util.Set;
 @ApplicationScoped
 public class TokenGenerator {
 
-    public static TokenResponseDTO build(String username, Set<String> roles, String id)
+    public static TokenResponseDTO buildUserToken(String username, Set<String> roles, String id)
     {
-        long expiresIn = 5000;
+        long expiresIn = 900; // TTL -> 15 MINUTES
 
-        String accessToken=  Jwt.upn(username)
+        String accessToken=  Jwt.subject(username)
                                 .claim("userId", id)
                                 .expiresIn(expiresIn)
                                 .groups(roles)
                                 .sign();
 
         return new TokenResponseDTO(accessToken, "Bearer", expiresIn);
+    }
+
+    public static String buildServiceToken(String username, Set<String> roles)
+    {
+        long expiresIn = 60; // TTL -> 1 MINUTE
+
+        return  Jwt.subject(username)
+                    .expiresIn(expiresIn)
+                    .groups(roles)
+                    .sign();
     }
 }

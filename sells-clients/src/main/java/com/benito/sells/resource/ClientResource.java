@@ -7,9 +7,6 @@ import com.benito.sells.dto.ClientsPaginatedDTO;
 import com.benito.sells.exception.ClientAccessDeniedException;
 import com.benito.sells.exception.InvalidIdException;
 import com.benito.sells.service.ClientService;
-import io.quarkiverse.bucket4j.runtime.RateLimited;
-import io.quarkiverse.bucket4j.runtime.resolver.IpResolver;
-import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -64,8 +61,7 @@ public class ClientResource {
 
 
     @POST
-    @PermitAll //NOTE: UNAUTHENTICATED USERS CAN CREATE AN ACCOUNT
-    @RateLimited(bucket = "registration", identityResolver = IpResolver.class)
+    @RolesAllowed("aService") //NOTE: NEW CLIENTS CAN ONLY BE REGISTERED BY THE AUTH SERVICE
     public RestResponse<ClientResponseDTO> createClient(@Valid ClientRequestDTO requestClient,
                                                         @Context UriInfo uriInfo)
     {
