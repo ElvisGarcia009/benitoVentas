@@ -1,4 +1,4 @@
-# sells-clients
+# Sales-clients
 
 Microservicio de **clientes** del sistema de ventas. Permite que un usuario no autenticado se registre como cliente, que el cliente consulte y actualice sus datos, y que el administrador gestione a todos los clientes.
 
@@ -6,9 +6,9 @@ Forma parte de un sistema dividido en tres servicios por dominio:
 
 | Servicio | Responsabilidad | Estado |
 |---|---|---|
-| **sells-products** | Catálogo de productos | En desarrollo |
-| **sells-clients** | Datos de los clientes | En desarrollo |
-| **sells-orders** | Órdenes de los clientes | Pendiente |
+| **sales-products** | Catálogo de productos | En desarrollo |
+| **sales-clients** | Datos de los clientes | En desarrollo |
+| **sales-orders** | Órdenes de los clientes | Pendiente |
 
 > La división es por **dominio** (qué se maneja), lo que puede hacer cada usuario (visitante, cliente o admin) se controla con roles dentro de cada servicio.
 
@@ -67,7 +67,7 @@ Archivo: `src/main/resources/application.properties`
 
 | Propiedad | Descripción |
 |---|---|
-| `quarkus.http.port` | Puerto del servicio (`8081`, para no chocar con `sells-products` en el `8080`) |
+| `quarkus.http.port` | Puerto del servicio (`8081`, para no chocar con `sales-products` en el `8080`) |
 | `quarkus.http.auth.proactive` | `false`: el token solo se valida en los endpoints que lo necesitan (ver *Seguridad*) |
 | `quarkus.mongodb.connection-string` | Cadena de conexión a MongoDB |
 | `quarkus.mongodb.database` | Base de datos (`clientdb`) |
@@ -115,7 +115,7 @@ El servicio **no emite tokens**: solo los verifica. Los JWT los genera el servic
 
 - **Autenticación no proactiva** (`quarkus.http.auth.proactive=false`): el token solo se valida cuando un endpoint necesita saber quién es el usuario (los que tienen `@RolesAllowed`).
   - El registro (`@PermitAll`) sigue accesible sin autenticación, aunque la petición traiga un token vencido o inválido.
-  - Se mantiene igual que en `sells-products` para que todos los servicios se comporten igual.
+  - Se mantiene igual que en `sales-products` para que todos los servicios se comporten igual.
   - Los errores de autenticación llegan a la capa de endpoints, así que también se responden con el formato `ErrorDTO`.
 
 Los tokens se envían en el header:
@@ -286,7 +286,7 @@ Las excepciones de seguridad las lanza Quarkus, pero cada una tiene su propio ma
   - `Response` crudo solo se usa dentro de los ExceptionMappers, porque la interfaz `ExceptionMapper` obliga a devolverlo. Se arma en un único lugar: `ErrorResponseBuilder`.
 
 
-- **Mismos patrones que `sells-products`.** Estructura de carpetas, nombres, manejo de errores y configuración de seguridad son iguales en ambos servicios.
+- **Mismos patrones que `sales-products`.** Estructura de carpetas, nombres, manejo de errores y configuración de seguridad son iguales en ambos servicios.
 
 
 - **DTOs separados de la entidad.** La API no expone el documento de Mongo directamente; usa `ClientRequestDTO` / `ClientUpdateRequestDTO` para la entrada y `ClientResponseDTO` para la salida.

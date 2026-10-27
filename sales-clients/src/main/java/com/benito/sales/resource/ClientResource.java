@@ -47,10 +47,11 @@ public class ClientResource {
 
     @GET
     @Path("/{id}")
-    @RolesAllowed({"admin", "client"})
+    @RolesAllowed({"admin", "client", "orderService"}) //A client can ask for his own information
     public ClientResponseDTO getClientById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
+
 
         if (!jwt.getGroups().contains("admin"))
             clientAccessVerification(id);
@@ -78,7 +79,7 @@ public class ClientResource {
 
     @PUT
     @Path("/{id}")
-    @RolesAllowed({"admin", "client"}) //NOTE: CLIENT CAN UPDATE HIS INFORMATION
+    @RolesAllowed({"admin", "client", "orderService"}) //NOTE: CLIENT CAN UPDATE HIS INFORMATION
     public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientUpdateRequestDTO requestClient) {
 
         ObjectId validatedId = validateId(id);

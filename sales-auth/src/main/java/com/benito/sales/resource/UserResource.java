@@ -4,6 +4,7 @@ import com.benito.sales.dto.UserRequestDTO;
 import com.benito.sales.dto.UserResponseDTO;
 import com.benito.sales.dto.UserRolesRequestDTO;
 import com.benito.sales.dto.UsersPaginatedDTO;
+import com.benito.sales.exception.ClientAccessDeniedException;
 import com.benito.sales.exception.InvalidIdException;
 import com.benito.sales.exception.SelfModificationException;
 import com.benito.sales.service.UserService;
@@ -25,7 +26,6 @@ import java.net.URI;
 @Path("api/v1/user")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed("admin")
 public class UserResource {
 
     //DEPENDENCY INJECTION -> Service & jwt
@@ -38,6 +38,7 @@ public class UserResource {
     }
 
     @GET
+    @RolesAllowed("admin")
     public UsersPaginatedDTO getAllUsers(@QueryParam("page") @PositiveOrZero @DefaultValue("0") int page,
                                          @QueryParam("pageSize") @Positive @DefaultValue("10") @Max(30) int pageSize)
     {
@@ -47,9 +48,13 @@ public class UserResource {
 
     @GET
     @Path("/{id}")
+    @RolesAllowed({"admin", "client"}) //A user client can ask for his own information
     public UserResponseDTO getUserById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
+
+        if (!jwt.getGroups().contains("admin") && !id.equals(jwt.getClaim("userId")))
+                throw new ClientAccessDeniedException();
 
         //Quarkus return this with a 200 status code
         return _userService.getUserById(validatedId);
@@ -57,6 +62,7 @@ public class UserResource {
 
 
     @POST
+    @RolesAllowed("admin")
     public RestResponse<UserResponseDTO> createUser(@Valid UserRequestDTO requestUser,
                                                     @Context UriInfo uriInfo)
     {
@@ -73,6 +79,7 @@ public class UserResource {
 
     @PUT
     @Path("/{id}/roles")
+    @RolesAllowed("admin")
     public UserResponseDTO updateUserRoles(@PathParam("id") String id, @Valid UserRolesRequestDTO requestRoles)
     {
         ObjectId validatedId = validateId(id);
@@ -85,6 +92,7 @@ public class UserResource {
 
     @DELETE
     @Path("/{id}")
+    @RolesAllowed("admin")
     public RestResponse<Void> deleteUser(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);

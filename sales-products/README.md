@@ -1,4 +1,4 @@
-# sells-products
+# Sales-products
 
 Microservicio de **productos** del sistema de ventas. Expone el catálogo de productos y permite que el administrador lo gestione.
 
@@ -6,9 +6,9 @@ Forma parte de un sistema dividido en tres servicios por dominio:
 
 | Servicio | Responsabilidad | Estado |
 |---|---|---|
-| **sells-products** | Catálogo de productos | En desarrollo |
-| **sells-clients** | Datos de los clientes | Pendiente |
-| **sells-orders** | Órdenes de los clientes | Pendiente |
+| **sales-products** | Catálogo de productos | En desarrollo |
+| **sales-clients** | Datos de los clientes | Pendiente |
+| **sales-orders** | Órdenes de los clientes | Pendiente |
 
 > La división es por **dominio** (qué se maneja), lo que puede hacer cada usuario (visitante, cliente o admin) se controla con roles dentro de cada servicio.
 

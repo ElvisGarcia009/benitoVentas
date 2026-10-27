@@ -1,0 +1,27 @@
+package com.benito.sales.dto.restClientDTO;
+
+import java.math.BigDecimal;
+
+public class ClientResponseDTO {
+
+    public String id;
+    public String userId;
+    public String name;
+    public String lastName;
+    public String phone;
+    public String address;
+    public BigDecimal balance;
+
+    public ClientResponseDTO(String id, String userId, String name, String lastName,
+                             String phone, String address, BigDecimal balance)
+    {
+        this.id = id;
+        this.userId = userId;
+        this.name = name;
+        this.lastName = lastName;
+        this.phone = phone;
+        this.address = address;
+        this.balance = balance;
+    }
+
+}

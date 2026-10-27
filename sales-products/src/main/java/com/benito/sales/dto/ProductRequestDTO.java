@@ -16,7 +16,7 @@ public class ProductRequestDTO {
 
     @PositiveOrZero(message = "quantity cannot be negative")
     @NotNull(message = "quantity cannot be null")
-    public int quantity;
+    public int stock;
 
     @PositiveOrZero(message = "price cannot be negative")
     @NotNull(message = "price cannot be null")

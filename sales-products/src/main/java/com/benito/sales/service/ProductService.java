@@ -54,7 +54,7 @@ public class ProductService {
         Product newProduct = new Product();
         newProduct.name = requestProduct.name;
         newProduct.description = requestProduct.description;
-        newProduct.quantity = requestProduct.quantity;
+        newProduct.stock = requestProduct.stock;
         newProduct.price = requestProduct.price;
 
         //AUDIT FIELDS
@@ -76,7 +76,7 @@ public class ProductService {
 
         productFound.name = requestProduct.name;
         productFound.description = requestProduct.description;
-        productFound.quantity = requestProduct.quantity;
+        productFound.stock = requestProduct.stock;
         productFound.price = requestProduct.price;
 
         //AUDIT FIELDS
