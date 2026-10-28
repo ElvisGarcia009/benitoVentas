@@ -1,4 +1,4 @@
-package com.benito.sales.dto;
+package com.benito.sales.dto.restClientDTO;
 
 import java.math.BigDecimal;
 

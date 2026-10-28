@@ -13,6 +13,7 @@ public class Order {
     //MAIN FIELDS
     public ObjectId id;
     public String clientId;
+    public String userId;
     public List<OrderProductRecord> products;
     public BigDecimal orderTotal;
 

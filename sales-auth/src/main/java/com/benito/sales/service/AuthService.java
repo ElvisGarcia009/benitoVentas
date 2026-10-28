@@ -1,6 +1,6 @@
 package com.benito.sales.service;
 
-import com.benito.sales.dto.ClientRequestDTO;
+import com.benito.sales.dto.restClientDTO.ClientRequestDTO;
 import com.benito.sales.dto.LoginRequestDTO;
 import com.benito.sales.dto.RegisterRequestDTO;
 import com.benito.sales.dto.TokenResponseDTO;

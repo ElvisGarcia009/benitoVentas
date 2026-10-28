@@ -12,7 +12,6 @@ public class Product {
     public ObjectId id;
     public String name;
     public String description;
-    public int stock;
     public BigDecimal price;
 
 

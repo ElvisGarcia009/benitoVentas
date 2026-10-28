@@ -1,0 +1,87 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: mongo-sales
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+    volumes:
+      - mongo-data:/data/db
+  sales-products:
+    build:
+      context: ./sales-products
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: sales-product
+    ports:
+      - "9080:8080"
+    secrets:
+      - jwt_public_key
+    environment:
+      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
+      MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
+    depends_on:
+      - mongodb
+  sales-clients:
+    build:
+      context: ./sales-clients
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: sales-clients
+    ports:
+      - "9081:8080"
+    secrets:
+      - jwt_public_key
+    environment:
+      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
+      MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
+    depends_on:
+      - mongodb
+  sales-orders:
+    build:
+      context: ./sales-orders
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: sales-orders
+    ports:
+      - "9082:8080"
+    secrets:
+      - jwt_public_key
+    environment:
+      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
+      QUARKUS_REST_CLIENT_PRODUCT_API_URL: http://sales-products:8080
+      QUARKUS_REST_CLIENT_CLIENT_API_URL: http://sales-clients:8080
+      MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
+    depends_on:
+      - mongodb
+      - sales-clients
+      - sales-products
+  sales-auth:
+    build:
+      context: ./sales-auth
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: sales-auth
+    ports:
+      - "9083:8080"
+    secrets:
+      - jwt_private_key
+      - jwt_public_key
+    environment:
+      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
+      USER_SEEDER_ADMINPASSWORD: Admin123$
+      QUARKUS_REST_CLIENT_CLIENT_API_URL: http://sales-clients:8080
+      SMALLRYE_JWT_SIGN_KEY_LOCATION: /run/secrets/jwt_private_key
+      MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
+    depends_on:
+      - mongodb
+      - sales-clients
+volumes:
+  mongo-data:
+secrets:
+  jwt_private_key:
+    file: ./secrets/privateKey.pem
+  jwt_public_key:
+    file: ./secrets/publicKey.pem

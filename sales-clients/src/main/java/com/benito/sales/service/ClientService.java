@@ -5,7 +5,9 @@ import com.benito.sales.dto.ClientResponseDTO;
 import com.benito.sales.dto.ClientUpdateRequestDTO;
 import com.benito.sales.dto.ClientsPaginatedDTO;
 import com.benito.sales.entity.Client;
+import com.benito.sales.exception.ClientAccessDeniedException;
 import com.benito.sales.exception.ClientNotFoundException;
+import com.benito.sales.exception.InsufficientBalanceException;
 import com.benito.sales.repository.ClientRepository;
 import io.quarkus.mongodb.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
@@ -43,9 +45,10 @@ public class ClientService {
 
 
     //GET A CLIENT BY ID
-    public ClientResponseDTO getClientById(ObjectId id)
+    public ClientResponseDTO getClientById(ObjectId id, String callerUserId, boolean isAdmin)
     {
         Client clientFound = findValidClient(id);
+        verifyClientAccess(clientFound, callerUserId, isAdmin);
 
         return ClientResponseDTO.TurnIntoDTO(clientFound);
     }
@@ -66,11 +69,55 @@ public class ClientService {
         return ClientResponseDTO.TurnIntoDTO(newClient);
     }
 
-
-    //PUT, UPDATE A CLIENT
-    public ClientResponseDTO updateClient(ObjectId id, ClientUpdateRequestDTO requestClient, String username)
+    //SUBTRACT AN AMOUNT FROM THE CLIENT'S BALANCE
+    public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount,
+                                          String callerUserId, boolean isAdmin, String username)
     {
         Client clientFound = findValidClient(id);
+        verifyClientAccess(clientFound, callerUserId, isAdmin);
+
+        BigDecimal balanceAfterBuying = clientFound.balance.subtract(amount);
+
+        //CAN THE CLIENT PAY THIS?
+        if (balanceAfterBuying.compareTo(BigDecimal.ZERO) < 0)
+            throw new InsufficientBalanceException();
+
+        clientFound.balance = balanceAfterBuying;
+
+        //AUDIT FIELDS
+        clientFound.updatedBy = username;
+        clientFound.updatedAt = Instant.now();
+
+        _clientRepository.update(clientFound);
+
+        return ClientResponseDTO.TurnIntoDTO(clientFound);
+    }
+
+
+    //ADD AN AMOUNT TO THE CLIENT'S BALANCE
+    public ClientResponseDTO creditBalance(ObjectId id, BigDecimal amount, String username)
+    {
+        Client clientFound = findValidClient(id);
+
+        clientFound.balance = clientFound.balance.add(amount);
+
+        //AUDIT FIELDS
+        clientFound.updatedBy = username;
+        clientFound.updatedAt = Instant.now();
+
+        _clientRepository.update(clientFound);
+
+        return ClientResponseDTO.TurnIntoDTO(clientFound);
+    }
+
+
+    //PUT, UPDATE A CLIENT
+    public ClientResponseDTO updateClient(ObjectId id, ClientUpdateRequestDTO requestClient,
+                                          String callerUserId, boolean isAdmin, String username)
+    {
+        Client clientFound = findValidClient(id);
+        verifyClientAccess(clientFound, callerUserId, isAdmin);
+
         mapRequestUpdateToClient(clientFound, requestClient, username);
 
         _clientRepository.update(clientFound);
@@ -106,15 +153,24 @@ public class ClientService {
         return clientContainer;
     }
 
+    //NOTE: A CLIENT CAN ONLY ACCESS HIS OWN INFORMATION. ADMINS CAN ACCESS EVERYONE'S
+    private void verifyClientAccess(Client client, String callerUserId, boolean isAdmin)
+    {
+        if (!isAdmin && !client.userId.equals(callerUserId))
+            throw new ClientAccessDeniedException();
+    }
+
     public void mapRequestToClient(Client client, ClientRequestDTO requestClient, String username)
     {
         //MAIN FIELDS
+        client.userId = requestClient.userId;
         client.name = requestClient.name;
         client.lastName = requestClient.lastName;
         client.phone = requestClient.phone;
         client.address = requestClient.address;
-                                                         //READ THE CLIENT REQUEST DTO for more info about the balance
-        //client.balance = requestClient.balance == null ? BigDecimal.valueOf(0) : requestClient.balance;
+
+        //NOTE: EVERY CLIENT STARTS WITH NO BALANCE, ONLY ADMINS CAN CREDIT BALANCES
+        client.balance = BigDecimal.ZERO;
 
         //AUDIT FIELDS
         client.status = true;
@@ -129,7 +185,6 @@ public class ClientService {
         client.lastName = requestClient.lastName;
         client.phone = requestClient.phone;
         client.address = requestClient.address;
-        client.balance = requestClient.balance;
 
         //AUDIT FIELDS
         client.updatedBy = username;

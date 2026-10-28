@@ -1,9 +1,6 @@
 package com.benito.sales.resource;
 
-import com.benito.sales.dto.ClientRequestDTO;
-import com.benito.sales.dto.ClientResponseDTO;
-import com.benito.sales.dto.ClientUpdateRequestDTO;
-import com.benito.sales.dto.ClientsPaginatedDTO;
+import com.benito.sales.dto.*;
 import com.benito.sales.exception.ClientAccessDeniedException;
 import com.benito.sales.exception.InvalidIdException;
 import com.benito.sales.service.ClientService;
@@ -47,17 +44,14 @@ public class ClientResource {
 
     @GET
     @Path("/{id}")
-    @RolesAllowed({"admin", "client", "orderService"}) //A client can ask for his own information
+    @RolesAllowed({"admin", "client"}) //A client can ask for his own information
     public ClientResponseDTO getClientById(@PathParam("id") String id)
     {
         ObjectId validatedId = validateId(id);
-
-
-        if (!jwt.getGroups().contains("admin"))
-            clientAccessVerification(id);
+        boolean isAdmin = jwt.getGroups().contains("admin");
 
         //Quarkus return this with a 200 status code
-        return _clientService.getClientById(validatedId);
+        return _clientService.getClientById(validatedId, jwt.getClaim("userId"), isAdmin);
     }
 
 
@@ -79,17 +73,17 @@ public class ClientResource {
 
     @PUT
     @Path("/{id}")
-    @RolesAllowed({"admin", "client", "orderService"}) //NOTE: CLIENT CAN UPDATE HIS INFORMATION
+    @RolesAllowed({"admin", "client"}) //NOTE: CLIENT CAN UPDATE HIS INFORMATION
     public ClientResponseDTO updateClient(@PathParam("id") String id, @Valid ClientUpdateRequestDTO requestClient) {
 
         ObjectId validatedId = validateId(id);
-
-        if (!jwt.getGroups().contains("admin"))
-            clientAccessVerification(id);
+        boolean isAdmin = jwt.getGroups().contains("admin");
 
         //Quarkus return this with a 200 status code
-        return _clientService.updateClient(validatedId, requestClient, jwt.getSubject());
+        return _clientService.updateClient(validatedId, requestClient,
+                jwt.getClaim("userId"), isAdmin, jwt.getSubject());
     }
+
 
     @DELETE
     @Path("/{id}")
@@ -102,6 +96,31 @@ public class ClientResource {
     }
 
 
+    @POST
+    @Path("/{id}/balance/debit")
+    @RolesAllowed({"admin", "client"})
+    public ClientResponseDTO debitBalance(@PathParam("id") String id, @Valid BalanceRequestDTO requestBalance)
+    {
+        ObjectId validatedId = validateId(id);
+        boolean isAdmin = jwt.getGroups().contains("admin");
+
+        //Quarkus return this with a 200 status code
+        return _clientService.debitBalance(validatedId, requestBalance.amount,
+                jwt.getClaim("userId"), isAdmin, jwt.getSubject());
+    }
+
+    @POST
+    @Path("/{id}/balance/credit")
+    @RolesAllowed("admin")
+    public ClientResponseDTO creditBalance(@PathParam("id") String id, @Valid BalanceRequestDTO requestBalance)
+    {
+        ObjectId validatedId = validateId(id);
+
+        //Quarkus return this with a 200 status code
+        return _clientService.creditBalance(validatedId, requestBalance.amount, jwt.getSubject());
+    }
+
+
 
 
     //HELPERS
@@ -111,11 +130,5 @@ public class ClientResource {
             throw new InvalidIdException(id);
 
         return new ObjectId(id);
-    }
-
-    private void clientAccessVerification(String id)
-    {
-        if(!id.equals(jwt.getClaim("userId")))
-            throw new ClientAccessDeniedException();
     }
 }

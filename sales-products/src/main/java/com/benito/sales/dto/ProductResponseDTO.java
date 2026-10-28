@@ -9,15 +9,13 @@ public class ProductResponseDTO {
     public String id;
     public String name;
     public String description;
-    public int stock;
     public BigDecimal price;
 
-    public ProductResponseDTO(String id, String name, String description, int stock, BigDecimal price)
+    public ProductResponseDTO(String id, String name, String description, BigDecimal price)
     {
         this.id = id;
         this.name = name;
         this.description = description;
-        this.stock = stock;
         this.price = price;
     }
 
@@ -26,7 +24,6 @@ public class ProductResponseDTO {
         return new ProductResponseDTO(product.id.toString(),
                                     product.name,
                                     product.description,
-                                    product.stock,
                                     product.price);
     }
 

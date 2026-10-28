@@ -22,7 +22,4 @@ public class ClientUpdateRequestDTO {
 
     @Size(max = 200, message = "address cannot be longer than 200 characters")
     public String address;
-
-    @PositiveOrZero(message = "balance cannot be negative")
-    public BigDecimal balance;
 }
