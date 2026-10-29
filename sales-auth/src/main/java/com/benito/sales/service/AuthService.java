@@ -1,5 +1,6 @@
 package com.benito.sales.service;
 
+import com.benito.sales.dto.ServiceTokenRequestDTO;
 import com.benito.sales.dto.restClientDTO.ClientRequestDTO;
 import com.benito.sales.dto.LoginRequestDTO;
 import com.benito.sales.dto.RegisterRequestDTO;
@@ -14,9 +15,12 @@ import io.quarkus.elytron.security.common.BcryptUtil;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -29,11 +33,15 @@ public class AuthService {
     //DEPENDENCY INJECTION
     private final ClientsApiClient _clientsApiClient;
     private final UserRepository _userRepository;
+    private final String _ordersServiceSecret;
 
-    public AuthService(UserRepository userRepository, @RestClient ClientsApiClient clientsApiClient)
+    public AuthService(UserRepository userRepository,
+                       @RestClient ClientsApiClient clientsApiClient,
+                       @ConfigProperty(name = "orders.service.secret") String ordersServiceSecret)
     {
         this._clientsApiClient = clientsApiClient;
         this._userRepository = userRepository;
+        this._ordersServiceSecret = ordersServiceSecret;
     }
 
 
@@ -92,6 +100,20 @@ public class AuthService {
             throw new InvalidCredentialsException();
 
         return TokenGenerator.buildUserToken(userFound.username, userFound.roles, userFound.id.toString());
+    }
+
+
+    //ISSUES A SHORT-LIVED TOKEN FOR AN INTERNAL SERVICE
+    public TokenResponseDTO issueServiceToken(ServiceTokenRequestDTO request)
+    {
+        boolean validSecret = MessageDigest.isEqual(request.secret.getBytes(StandardCharsets.UTF_8),
+                                             _ordersServiceSecret.getBytes(StandardCharsets.UTF_8));
+
+        if (!"orders-service".equals(request.serviceName) || !validSecret)
+            throw new InvalidCredentialsException();
+
+        String token = TokenGenerator.buildServiceToken(request.serviceName, Set.of("orderService"));
+        return new TokenResponseDTO(token, "Bearer", 60);
     }
 
 

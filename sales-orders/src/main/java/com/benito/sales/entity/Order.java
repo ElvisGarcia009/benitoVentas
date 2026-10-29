@@ -16,6 +16,9 @@ public class Order {
     public String userId;
     public List<OrderProductRecord> products;
     public BigDecimal orderTotal;
+    public OrderState orderStatus;
+    public String rejectionReason;   //WHY THE ORDER WAS REJECTED (NULL IF IT WASN'T)
+
 
     //AUDIT FIELDS
     public boolean status;

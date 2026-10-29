@@ -59,7 +59,7 @@ Ruta base: `/api/v1/client`
 | `POST` | `/api/v1/client` | `aService` (solo `sales-auth`) | Crea la ficha de un usuario recién registrado | `201` + `Location` |
 | `PUT` | `/api/v1/client/{id}` | `admin`, `client` (solo la suya) | Actualiza los datos editables | `200` |
 | `DELETE` | `/api/v1/client/{id}` | `admin` | Desactiva una ficha | `204` |
-| `POST` | `/api/v1/client/{id}/balance/debit` | `admin`, `client` (solo la suya) | Descuenta saldo (lo usa `sales-orders` al cobrar) | `200` |
+| `POST` | `/api/v1/client/{id}/balance/debit` | `admin`, `client` (solo la suya), `orderService` | Descuenta saldo (lo usa `sales-orders` al cobrar) | `200` |
 | `POST` | `/api/v1/client/{id}/balance/credit` | `admin` | Recarga saldo | `200` |
 
 ### `POST /api/v1/client` (lo llama `sales-auth`)
@@ -135,11 +135,11 @@ Mismas reglas que arriba para estos campos. No incluye `balance`: el saldo solo 
 
 - **Solo `sales-auth` crea fichas**, usando un token de servicio con rol `aService`. Así toda ficha tiene un usuario detrás.
 - **El chequeo de "solo lo suyo" está en el service**: compara el `userId` guardado en la ficha con el claim `userId` del token. El resource no puede hacerlo porque solo tiene el id de la ruta, que es el de la ficha, no el del usuario.
+- **`orderService` puede cobrar a cualquier ficha**, igual que el admin: es el token que usa `sales-orders` al procesar una orden. La validación de que la ficha es del usuario ya se hizo en orders, al recibir la orden.
 - **El saldo tiene endpoints propios** (`debit` y `credit`) en lugar de editarse con el `PUT`. Así un cliente no puede asignarse saldo a sí mismo, y solo el admin puede recargarlo.
 - **Saldo insuficiente → 422**: la petición es correcta, pero rompe una regla de negocio.
 - **Un DTO por operación**: `ClientRequestDTO` para crear y `ClientUpdateRequestDTO` para editar.
 
 ## Limitación a tomar en cuenta
 
-- Dos cobros simultáneos al mismo cliente podrían leer el mismo saldo antes de que alguno lo actualice (pendiente de arreglar).
-
+- El saldo se lee y se actualiza en dos pasos, así que dos cobros simultáneos al mismo cliente podrían leer el mismo saldo. En las compras esto se evita con Kafka: las órdenes de un mismo cliente se procesan una detrás de otra (misma llave, misma partición). El riesgo queda solo si se llama a `debit` directamente en paralelo.

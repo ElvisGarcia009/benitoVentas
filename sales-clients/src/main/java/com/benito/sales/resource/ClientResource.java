@@ -1,7 +1,6 @@
 package com.benito.sales.resource;
 
 import com.benito.sales.dto.*;
-import com.benito.sales.exception.ClientAccessDeniedException;
 import com.benito.sales.exception.InvalidIdException;
 import com.benito.sales.service.ClientService;
 import jakarta.annotation.security.RolesAllowed;
@@ -98,15 +97,16 @@ public class ClientResource {
 
     @POST
     @Path("/{id}/balance/debit")
-    @RolesAllowed({"admin", "client"})
+    @RolesAllowed({"admin", "client", "orderService"})
     public ClientResponseDTO debitBalance(@PathParam("id") String id, @Valid BalanceRequestDTO requestBalance)
     {
         ObjectId validatedId = validateId(id);
-        boolean isAdmin = jwt.getGroups().contains("admin");
+
+        boolean isPrivileged = jwt.getGroups().contains("admin") || jwt.getGroups().contains("orderService") ;
 
         //Quarkus return this with a 200 status code
         return _clientService.debitBalance(validatedId, requestBalance.amount,
-                jwt.getClaim("userId"), isAdmin, jwt.getSubject());
+                jwt.getClaim("userId"), isPrivileged, jwt.getSubject());
     }
 
     @POST

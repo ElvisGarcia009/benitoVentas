@@ -8,10 +8,10 @@ Microservicio de **identidad** de Benito Ventas. Registra usuarios, hace el logi
 
 ```
 resource/
-  AuthResource → Registro y login (públicos)
+  AuthResource → Registro, login y token de servicio (públicos)
   UserResource → Gestión de usuarios (admin)
 service/
-  AuthService    → Registro y login
+  AuthService    → Registro, login y tokens de servicio para otros servicios
   UserService    → CRUD de usuarios
   TokenGenerator → Firma los JWT de usuario y de servicio
 seed/        → AdminSeeder: crea el primer administrador al arrancar Quarkus
@@ -48,6 +48,7 @@ exception/, mapper/exceptionMapper/, helper/ → Errores
 | `mp.jwt.verify.publickey.location` | Clave pública, para verificar los tokens que recibe |
 | `quarkus.rest-client.client-api.url` | En desarrollo: `http://localhost:8081`. En Docker: `http://sales-clients:8080` |
 | `user.seeder.adminPassword` | Contraseña del administrador inicial (en Docker: `USER_SEEDER_ADMINPASSWORD`) |
+| `orders.service.secret` | Secreto que debe enviar `sales-orders` para pedir su token (en Docker: `ORDERS_SERVICE_SECRET`) |
 | `quarkus.rate-limiter.buckets.authentication.*` | 10 peticiones por segundo y 100 cada 5 minutos, por IP |
 
 La clave privada **solo existe en este servicio** y no se versiona (`secrets/` está en `.gitignore`).
@@ -59,9 +60,11 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 | Tipo | `sub` | Claims extra | Roles (`groups`) | Duración |
 |---|---|---|---|---|
 | Usuario | `username` | `userId` | Los del usuario | 15 minutos |
-| Servicio | `AuthService` | — | `aService` | 1 minuto |
+| Servicio (auth) | `AuthService` | — | `aService` | 1 minuto |
+| Servicio (orders) | `orders-service` | — | `orderService` | 1 minuto |
 
-El token de servicio se usa solo para crear la ficha del cliente en `sales-clients` durante el registro.
+- `aService`: auth se lo firma a sí mismo para crear la ficha del cliente en `sales-clients` durante el registro.
+- `orderService`: lo pide `sales-orders` para cobrar el saldo cuando procesa una orden desde Kafka.
 
 ---
 
@@ -73,6 +76,7 @@ El token de servicio se usa solo para crear la ficha del cliente en `sales-clien
 |---|---|---|---|
 | `POST` | `/api/v1/auth/register` | Registra un cliente: crea el usuario y su ficha | `204` |
 | `POST` | `/api/v1/auth/login` | Devuelve un token de acceso | `200` |
+| `POST` | `/api/v1/auth/service-token` | Devuelve un token de servicio a `sales-orders` | `200` |
 
 **Registro:**
 
@@ -102,6 +106,14 @@ El token de servicio se usa solo para crear la ficha del cliente en `sales-clien
 ```json
 { "access_token": "eyJ...", "token_type": "Bearer", "expires_in": 900 }
 ```
+
+**Token de servicio:**
+
+```json
+{ "serviceName": "orders-service", "secret": "..." }
+```
+
+Solo acepta `orders-service` con el secreto correcto; si no, responde `401`. El secreto se compara con `MessageDigest.isEqual`, que tarda lo mismo acierte o falle, para no dar pistas a quien intente adivinarlo.
 
 ### Usuarios: `/api/v1/user`
 
@@ -138,6 +150,7 @@ Respuesta (`UserResponseDTO`, sin el hash):
 |---|---|
 | Datos inválidos / id inválido | `400` |
 | Usuario o contraseña incorrectos (mismo mensaje en los dos casos) | `401` |
+| Servicio o secreto incorrectos al pedir un token de servicio | `401` |
 | Sin token / token inválido | `401` |
 | Rol no permitido, o un admin intenta modificarse a sí mismo | `403` |
 | Usuario inexistente | `404` |

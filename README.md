@@ -21,12 +21,20 @@ El sistema está dividido en **cuatro servicios por dominio** (qué se maneja). 
      login / registro    │   sales-auth     │  emite los JWT (clave privada)
    ─────────────────────▶│   usuarios       │──┐
                          └──────────────────┘  │ crea la ficha del cliente
-                                               ▼ (token de servicio)
-┌──────────────────┐     ┌──────────────────┐
-│  sales-products  │◀────│   sales-orders   │──▶┌──────────────────┐
-│  catálogo        │     │   órdenes        │   │  sales-clients   │
-└──────────────────┘     └──────────────────┘   │  fichas y saldo  │
-                                                └──────────────────┘
+                                  ▲            ▼ (token de servicio)
+                   token de       │
+                   servicio       │
+┌──────────────────┐     ┌──────────────────┐   ┌──────────────────┐
+│  sales-products  │◀────│   sales-orders   │──▶│  sales-clients   │
+│  catálogo        │     │   órdenes        │   │  fichas y saldo  │
+└──────────────────┘     └──────────────────┘   └──────────────────┘
+                            │          ▲
+                    publica │          │ consume
+                            ▼          │
+                         ┌────────────────┐
+                         │     Kafka      │  topic order-requests
+                         └────────────────┘
+
            Todos verifican los JWT con la clave pública
                           ┌────────────┐
                           │  MongoDB   │  una base de datos por servicio
@@ -39,6 +47,11 @@ El sistema está dividido en **cuatro servicios por dominio** (qué se maneja). 
 | [sales-clients](sales-clients/README.md) | Fichas de clientes y saldo | `clientdb` | 8081 | 9081 |
 | [sales-orders](sales-orders/README.md) | Órdenes de compra | `ordersdb` | 8084 | 9082 |
 | [sales-auth](sales-auth/README.md) | Usuarios, registro, login y emisión de tokens | `userdb` | 8083 | 9083 |
+
+| Infraestructura | Puerto |
+|---|---|
+| MongoDB 7 | 27017 |
+| Kafka 3.9 (modo KRaft, sin Zookeeper) | 9092 desde fuera de Docker, `kafka:29092` dentro de Docker |
 
 ### Usuario vs. cliente
 
@@ -57,6 +70,8 @@ Todo cliente es un usuario, pero no todo usuario es un cliente (un administrador
 - **Hibernate Validator** para validar la entrada
 - **Bucket4j** (`quarkus-bucket4j`) para rate limiting por IP
 - **BCrypt** (`quarkus-elytron-security-common`) para el hash de contraseñas
+- **Apache Kafka** + **SmallRye Reactive Messaging** (`quarkus-messaging-kafka`) para encolar las órdenes
+- **SmallRye Health** (`quarkus-smallrye-health`) para los health checks
 - **Docker Compose** para levantar todo el sistema
 
 ---
@@ -89,9 +104,13 @@ Todo cliente es un usuario, pero no todo usuario es un cliente (un administrador
 
 Las claves llegan a los contenedores como **Docker secrets** (`/run/secrets/...`). Dentro de Docker, los servicios se llaman entre sí por su nombre y por el puerto interno 8080 (`http://sales-clients:8080`); los puertos 908x son solo para acceder desde fuera.
 
+Kafka tiene dos "puertas": `kafka:29092` para los contenedores y `localhost:9092` para lo que corre fuera de Docker (por ejemplo, un servicio en modo desarrollo).
+
+> **Nota:** el secreto del servicio de órdenes (`ORDERS_SERVICE_SECRET`) y la contraseña del admin inicial (`USER_SEEDER_ADMINPASSWORD`) están escritos en `docker-compose.yml` como valores por defecto **solo porque es una prueba técnica**, para que el sistema arranque sin pasos extra. En producción irían en un archivo `.env` fuera del repositorio o en un gestor de secretos.
+
 ### En modo desarrollo
 
-Con MongoDB corriendo en `localhost:27017`, en cada servicio:
+Con MongoDB en `localhost:27017` y Kafka en `localhost:9092` (por ejemplo, `docker compose up -d mongodb kafka`), en cada servicio:
 
 ```bash
 ./mvnw quarkus:dev
@@ -109,6 +128,18 @@ Al arrancar, `sales-auth` crea un administrador si no existe:
 
 > En producción, esta contraseña vendría de un gestor de secretos, no del repositorio.
 
+### Health checks
+
+Cada servicio expone:
+
+| Ruta | Qué responde |
+|---|---|
+| `/q/health` | Estado general |
+| `/q/health/live` | ¿El servicio está vivo? |
+| `/q/health/ready` | ¿Está listo para recibir peticiones? (MongoDB y, en orders, Kafka) |
+
+Ejemplo: `http://localhost:9082/q/health`.
+
 ---
 
 ## Flujo principal
@@ -116,17 +147,20 @@ Al arrancar, `sales-auth` crea un administrador si no existe:
 1. **Registro** (`POST sales-auth /api/v1/auth/register`): auth crea el usuario con rol `client` y llama a clients para crear su ficha con saldo 0.
 2. **Login** (`POST sales-auth /api/v1/auth/login`): devuelve un JWT de 15 minutos con `sub` (username), `userId` y `groups` (roles).
 3. **Recarga de saldo** (`POST sales-clients /api/v1/client/{id}/balance/credit`): solo admin.
-4. **Compra** (`POST sales-orders /api/v1/order`): orders consulta el cliente y los productos, calcula los totales, guarda la orden y cobra el saldo.
-5. **Consulta** (`GET sales-orders /api/v1/order/me`): el cliente ve sus órdenes.
+4. **Compra** (`POST sales-orders /api/v1/order`): orders valida el cliente, guarda la orden en `PENDING`, la publica en Kafka y responde **202**.
+5. **Procesamiento** (en segundo plano): el consumidor de orders calcula los totales y cobra el saldo. La orden pasa a `COMPLETED` o a `REJECTED` con su motivo.
+6. **Consulta** (`GET sales-orders /api/v1/order/{id}` o `/order/me`): el cliente ve el estado de sus órdenes.
 
 ---
 
 ## Seguridad
 
 - **JWT RS256.** Solo `sales-auth` tiene la clave privada y firma los tokens; todos los servicios los verifican con la clave pública.
-- **Roles:** `admin`, `client` y `aService` (token de servicio).
-- **Token de servicio:** para crear la ficha de un cliente, auth se firma un token propio de **1 minuto** con el rol `aService`. Así nadie más puede crear fichas directamente en clients.
-- **Propagación del token:** cuando orders llama a clients, reenvía el token del usuario. Clients aplica sus propias reglas con los permisos de ese usuario, ni más ni menos.
+- **Roles:** `admin`, `client`, y dos roles de servicio: `aService` y `orderService`.
+- **Tokens de servicio** (duran **1 minuto**):
+  - Para crear la ficha de un cliente, auth se firma un token propio con el rol `aService`. Así nadie más puede crear fichas directamente en clients.
+  - Para cobrar una orden, orders le pide a auth un token con el rol `orderService` (`POST /api/v1/auth/service-token`, con su nombre y su secreto). Hace falta porque el cobro ocurre en segundo plano, cuando el token del usuario puede haber vencido.
+- **Propagación del token:** al recibir la orden, orders valida el cliente reenviando el token del usuario. Clients aplica sus propias reglas con los permisos de ese usuario, ni más ni menos.
 - **Cada cliente solo accede a lo suyo:** clients y orders comparan el `userId` del token con el dueño del recurso.
 - **Autenticación no proactiva** (`quarkus.http.auth.proactive=false`): el token solo se valida en los endpoints que lo requieren.
 - **Rate limiting por IP** en los endpoints públicos: catálogo de productos, login y registro.
@@ -142,7 +176,7 @@ Cada servicio tiene su propia base de datos, así que no hay transacciones entre
 | Operación | Paso 1 | Paso 2 | Si el paso 2 falla |
 |---|---|---|---|
 | Registro | Auth guarda el usuario | Clients crea la ficha | Auth borra el usuario y responde 503 |
-| Compra | Orders guarda la orden | Clients cobra el saldo | Orders borra la orden y responde el error (por ejemplo 422 por saldo insuficiente) |
+| Compra | Orders guarda la orden (`PENDING`) | Clients cobra el saldo | La orden queda `REJECTED` con el motivo (por ejemplo, saldo insuficiente) |
 
 ---
 
@@ -172,17 +206,30 @@ Cuando un servicio llama a otro, traduce sus errores: por ejemplo, un 404 de pro
 
 ---
 
+## Órdenes con Kafka (pub-sub)
+
+Las órdenes de compra se encolan como mensajes en Kafka:
+
+- **Productor:** `sales-orders` publica en el topic `order-requests` al recibir la orden.
+- **Consumidor:** el mismo `sales-orders` (grupo `orders-processor`) lee el topic y procesa cada orden.
+- **Mensaje:** llave = `clientId`, valor = `id` de la orden. Con la llave, las órdenes de un mismo cliente van a la misma partición y se procesan en orden, así dos compras simultáneas no leen el mismo saldo.
+- **Consumidor idempotente:** solo procesa órdenes en `PENDING`; si un mensaje llega dos veces, no cobra dos veces.
+- **Errores técnicos** (un servicio caído): la orden queda `REJECTED` y el mensaje va a una **dead letter queue**, en lugar de detener el consumidor.
+
+Detalle completo en el [README de sales-orders](sales-orders/README.md).
+
+---
+
 ## Fuera de alcance
 
 Decisiones tomadas conscientemente para el tiempo de la prueba:
 
 - **Inventario (stock):** los productos no manejan existencias.
-- **Estados de la orden** (pagada, enviada, cancelada) y **reembolsos:** desactivar una orden no devuelve el saldo.
+- **Más estados de la orden** (pagada, enviada, cancelada) y **reembolsos:** desactivar una orden no devuelve el saldo.
 
 ## Pendientes
 
 - [ ] TLS hacia el exterior y mTLS entre servicios.
 - [ ] `ConstraintViolationMapper` con status 400 en products, clients y auth (hoy 500).
 - [ ] Mensajes en los 401/403 y mappers `UnauthorizedMapper` / `ForbiddenMapper` en auth.
-- [ ] Implementación de Kafka luego de una orden de compra.
 - [ ] Pruebas Unitarias.

@@ -3,6 +3,7 @@ package com.benito.sales.resource;
 import com.benito.sales.dto.OrderRequestDTO;
 import com.benito.sales.dto.OrderResponseDTO;
 import com.benito.sales.dto.OrdersPaginatedDTO;
+import com.benito.sales.dto.TemporalOrderResponseDTO;
 import com.benito.sales.exception.InvalidIdException;
 import com.benito.sales.service.OrderService;
 import jakarta.annotation.security.RolesAllowed;
@@ -11,14 +12,12 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.UriInfo;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestResponse;
 
-import java.net.URI;
+
 
 @Path("api/v1/order")
 @Produces(MediaType.APPLICATION_JSON)
@@ -68,22 +67,15 @@ public class OrderResource {
 
     @POST
     @RolesAllowed({"admin", "client"})
-    public RestResponse<OrderResponseDTO> createPurchaseOrder(@Valid OrderRequestDTO requestOrder,
-                                                              @Context UriInfo uriInfo)
+    public RestResponse<TemporalOrderResponseDTO> createPurchaseOrder(@Valid OrderRequestDTO requestOrder)
     {
         validateId(requestOrder.clientId);
 
-        OrderResponseDTO createdOrder = _orderService.createPurchaseOrder(requestOrder,
-                jwt.getRawToken(),
-                jwt.getSubject());
+        TemporalOrderResponseDTO processedOrder = _orderService.createPurchaseOrder(requestOrder,
+                                                                                    jwt.getRawToken(),
+                                                                                    jwt.getSubject());
 
-        URI location = uriInfo.getAbsolutePathBuilder()
-                .path(createdOrder.id)
-                .build();
-
-        return RestResponse.ResponseBuilder.<OrderResponseDTO>created(location)
-                .entity(createdOrder)
-                .build();
+        return RestResponse.accepted(processedOrder);
     }
 
 

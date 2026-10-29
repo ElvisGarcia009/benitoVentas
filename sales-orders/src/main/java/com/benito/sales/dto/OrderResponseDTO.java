@@ -1,6 +1,7 @@
 package com.benito.sales.dto;
 
 import com.benito.sales.entity.Order;
+import com.benito.sales.entity.OrderState;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -12,15 +13,19 @@ public class OrderResponseDTO {
     public String clientId;
     public List<OrderProductRecordResponseDTO> products;
     public BigDecimal orderTotal;
+    public OrderState orderStatus;
+    public String rejectionReason;
     public Instant createdAt;
 
     public OrderResponseDTO(String id, String clientId, List<OrderProductRecordResponseDTO> products,
-                            BigDecimal orderTotal, Instant createdAt)
+                            BigDecimal orderTotal, OrderState orderStatus, String rejectionReason, Instant createdAt)
     {
         this.id = id;
         this.clientId = clientId;
         this.products = products;
         this.orderTotal = orderTotal;
+        this.orderStatus = orderStatus;
+        this.rejectionReason = rejectionReason;
         this.createdAt = createdAt;
     }
 
@@ -38,6 +43,8 @@ public class OrderResponseDTO {
                 order.clientId,
                 products,
                 order.orderTotal,
+                order.orderStatus,
+                order.rejectionReason,
                 order.createdAt);
     }
 }

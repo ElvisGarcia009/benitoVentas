@@ -2,6 +2,7 @@ package com.benito.sales.resource;
 
 import com.benito.sales.dto.LoginRequestDTO;
 import com.benito.sales.dto.RegisterRequestDTO;
+import com.benito.sales.dto.ServiceTokenRequestDTO;
 import com.benito.sales.dto.TokenResponseDTO;
 import com.benito.sales.service.AuthService;
 import io.quarkiverse.bucket4j.runtime.RateLimited;
@@ -48,5 +49,13 @@ public class AuthResource {
     {
         //Quarkus return this with a 200 status code
         return _authService.login(loginRequest);
+    }
+
+    @POST
+    @Path("/service-token")
+    //ONLY FOR INTERNAL SERVICES. EACH ONE IDENTIFIES ITSELF WITH ITS OWN SECRET
+    public TokenResponseDTO serviceToken(@Valid ServiceTokenRequestDTO request)
+    {
+        return _authService.issueServiceToken(request);
     }
 }
