@@ -13,7 +13,6 @@ import com.benito.sales.restClient.ProductsApiClient;
 import io.quarkus.mongodb.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import org.bson.types.ObjectId;

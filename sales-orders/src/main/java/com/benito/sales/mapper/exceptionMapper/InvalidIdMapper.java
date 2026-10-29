@@ -13,7 +13,7 @@ public class InvalidIdMapper implements ExceptionMapper<InvalidIdException> {
     public Response toResponse(InvalidIdException exception) {
 
         return ErrorResponseBuilder.build("BAD REQUEST",
-                exception.getMessage(),
-                400);
+                                            exception.getMessage(),
+                                            400);
     }
 }

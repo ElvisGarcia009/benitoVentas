@@ -54,12 +54,12 @@ public class AuthService {
         _userRepository.persist(newUser);
 
         ClientRequestDTO newClient = new ClientRequestDTO(registerRequest.name,
-                newUser.id.toString(),
-                registerRequest.lastName,
-                registerRequest.email,
-                null,
-                null,
-                null);
+                                                          newUser.id.toString(),
+                                                          registerRequest.lastName,
+                                                          registerRequest.email,
+                                                          null,
+                                                          null,
+                                                          null);
 
         String serviceToken = TokenGenerator.buildServiceToken("AuthService",
                                                                 new HashSet<>(Set.of("aService")));
