@@ -186,9 +186,7 @@ public class OrderService {
 
             order.orderStatus = OrderState.REJECTED;
             order.rejectionReason = "The order could not be processed, please try again later";
-            saveProcessedOrder(order);
 
-            throw exception;
         }
 
         saveProcessedOrder(order);

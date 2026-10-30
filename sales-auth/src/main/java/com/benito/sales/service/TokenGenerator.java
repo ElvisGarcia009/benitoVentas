@@ -22,13 +22,15 @@ public class TokenGenerator {
         return new TokenResponseDTO(accessToken, "Bearer", expiresIn);
     }
 
-    public static String buildServiceToken(String username, Set<String> roles)
+    public static TokenResponseDTO buildServiceToken(String username, Set<String> roles)
     {
         long expiresIn = 60; // TTL -> 1 MINUTE
 
-        return  Jwt.subject(username)
+        String accessToken =  Jwt.subject(username)
                     .expiresIn(expiresIn)
                     .groups(roles)
                     .sign();
+
+        return new TokenResponseDTO(accessToken, "Bearer", expiresIn);
     }
 }

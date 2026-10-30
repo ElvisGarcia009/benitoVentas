@@ -8,6 +8,7 @@ import com.benito.sales.dto.TokenResponseDTO;
 import com.benito.sales.entity.User;
 import com.benito.sales.exception.ConflictException;
 import com.benito.sales.exception.InvalidCredentialsException;
+import com.benito.sales.exception.InvalidServiceCredentialsException;
 import com.benito.sales.exception.RegistrationFailedException;
 import com.benito.sales.repository.UserRepository;
 import com.benito.sales.restClient.ClientsApiClient;
@@ -70,7 +71,7 @@ public class AuthService {
                                                           null);
 
         String serviceToken = TokenGenerator.buildServiceToken("AuthService",
-                                                                new HashSet<>(Set.of("aService")));
+                                                                new HashSet<>(Set.of("aService"))).accessToken;
 
         try
         {
@@ -104,16 +105,19 @@ public class AuthService {
 
 
     //ISSUES A SHORT-LIVED TOKEN FOR AN INTERNAL SERVICE
-    public TokenResponseDTO issueServiceToken(ServiceTokenRequestDTO request)
+    public TokenResponseDTO issueServiceToken(ServiceTokenRequestDTO request, String callerCertificateName)
     {
+        //THE CALLER MUST PRESENT THE ORDERS SERVICE CERTIFICATE, OTHERWISE THE SECRET IS NOT EVEN CHECKED
+        if (!"CN=sales-orders".equals(callerCertificateName))
+            throw new InvalidServiceCredentialsException();
+
         boolean validSecret = MessageDigest.isEqual(request.secret.getBytes(StandardCharsets.UTF_8),
-                                             _ordersServiceSecret.getBytes(StandardCharsets.UTF_8));
+                _ordersServiceSecret.getBytes(StandardCharsets.UTF_8));
 
         if (!"orders-service".equals(request.serviceName) || !validSecret)
             throw new InvalidCredentialsException();
 
-        String token = TokenGenerator.buildServiceToken(request.serviceName, Set.of("orderService"));
-        return new TokenResponseDTO(token, "Bearer", 60);
+        return  TokenGenerator.buildServiceToken(request.serviceName, Set.of("orderService"));
     }
 
 
