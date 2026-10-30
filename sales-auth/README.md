@@ -21,6 +21,7 @@ dto/         → Objetos de entrada y salida
   restClientDTO/ → Objetos para hablar con sales-clients
 restClient/  → Cliente HTTP hacia sales-clients
 exception/, mapper/exceptionMapper/, helper/ → Errores
+filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
 ### El usuario
@@ -40,13 +41,13 @@ exception/, mapper/exceptionMapper/, helper/ → Errores
 
 | Propiedad | Valor / descripción |
 |---|---|
-| `quarkus.http.port` | `8083` |
+| `quarkus.http.ssl-port` | `8083` en desarrollo, `8443` en Docker. Solo https (TLS/mTLS: ver el [README principal](../README.md#tls-y-mtls)) |
 | `quarkus.http.auth.proactive` | `false` |
 | `quarkus.mongodb.database` | `userdb` |
 | `smallrye.jwt.sign.key.location` | Clave **privada**. En desarrollo: `../secrets/privateKey.pem`. En Docker: `/run/secrets/jwt_private_key` |
 | `smallrye.jwt.new-token.issuer` / `mp.jwt.verify.issuer` | `https://benito-ventas.app` |
 | `mp.jwt.verify.publickey.location` | Clave pública, para verificar los tokens que recibe |
-| `quarkus.rest-client.client-api.url` | En desarrollo: `http://localhost:8081`. En Docker: `http://sales-clients:8080` |
+| `quarkus.rest-client.client-api.url` | En desarrollo: `https://localhost:8081`. En Docker: `https://sales-clients:8443` |
 | `user.seeder.adminPassword` | Contraseña del administrador inicial (en Docker: `USER_SEEDER_ADMINPASSWORD`) |
 | `orders.service.secret` | Secreto que debe enviar `sales-orders` para pedir su token (en Docker: `ORDERS_SERVICE_SECRET`) |
 | `quarkus.rate-limiter.buckets.authentication.*` | 10 peticiones por segundo y 100 cada 5 minutos, por IP |

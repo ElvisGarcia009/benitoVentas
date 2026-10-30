@@ -16,6 +16,7 @@ exception/   → Excepciones de negocio
 mapper/
   exceptionMapper/ → Convierten excepciones en respuestas HTTP
 helper/      → ErrorResponseBuilder
+filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
 ```
@@ -40,7 +41,7 @@ Usuario / sales-auth / sales-orders → ClientResource → ClientService → Cli
 
 | Propiedad | Valor / descripción |
 |---|---|
-| `quarkus.http.port` | `8081` |
+| `quarkus.http.ssl-port` | `8081` en desarrollo, `8443` en Docker. Solo https (TLS/mTLS: ver el [README principal](../README.md#tls-y-mtls)) |
 | `quarkus.http.auth.proactive` | `false` |
 | `quarkus.mongodb.database` | `clientdb` |
 | `mp.jwt.verify.issuer` | `https://benito-ventas.app` |
@@ -140,6 +141,3 @@ Mismas reglas que arriba para estos campos. No incluye `balance`: el saldo solo 
 - **Saldo insuficiente → 422**: la petición es correcta, pero rompe una regla de negocio.
 - **Un DTO por operación**: `ClientRequestDTO` para crear y `ClientUpdateRequestDTO` para editar.
 
-## Limitación a tomar en cuenta
-
-- El saldo se lee y se actualiza en dos pasos, así que dos cobros simultáneos al mismo cliente podrían leer el mismo saldo. En las compras esto se evita con Kafka: las órdenes de un mismo cliente se procesan una detrás de otra (misma llave, misma partición). El riesgo queda solo si se llama a `debit` directamente en paralelo.

@@ -33,11 +33,17 @@ services:
       dockerfile: src/main/docker/Dockerfile.jvm
     container_name: sales-product
     ports:
-      - "9080:8080"
+      - "9080:8443"
     secrets:
       - jwt_public_key
+      - source: tls_ca
+        target: tls_ca
+      - source: products_cert
+        target: tls_cert
+      - source: products_key
+        target: tls_key
     environment:
-      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_HTTP_SSL_PORT: 8443
       QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
       MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
     depends_on:
@@ -48,11 +54,17 @@ services:
       dockerfile: src/main/docker/Dockerfile.jvm
     container_name: sales-clients
     ports:
-      - "9081:8080"
+      - "9081:8443"
     secrets:
       - jwt_public_key
+      - source: tls_ca
+        target: tls_ca
+      - source: clients_cert
+        target: tls_cert
+      - source: clients_key
+        target: tls_key
     environment:
-      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_HTTP_SSL_PORT: 8443
       QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
       MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
     depends_on:
@@ -63,15 +75,21 @@ services:
       dockerfile: src/main/docker/Dockerfile.jvm
     container_name: sales-orders
     ports:
-      - "9082:8080"
+      - "9082:8443"
     secrets:
       - jwt_public_key
+      - source: tls_ca
+        target: tls_ca
+      - source: orders_cert
+        target: tls_cert
+      - source: orders_key
+        target: tls_key
     environment:
-      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_HTTP_SSL_PORT: 8443
       QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
-      QUARKUS_REST_CLIENT_PRODUCT_API_URL: http://sales-products:8080
-      QUARKUS_REST_CLIENT_CLIENT_API_URL: http://sales-clients:8080
-      QUARKUS_REST_CLIENT_AUTH_API_URL: http://sales-auth:8080
+      QUARKUS_REST_CLIENT_PRODUCT_API_URL: https://sales-products:8443
+      QUARKUS_REST_CLIENT_CLIENT_API_URL: https://sales-clients:8443
+      QUARKUS_REST_CLIENT_AUTH_API_URL: https://sales-auth:8443
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ORDERS_SERVICE_SECRET: ${ORDERS_SERVICE_SECRET:-OrderService1994*}
       MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
@@ -87,15 +105,21 @@ services:
       dockerfile: src/main/docker/Dockerfile.jvm
     container_name: sales-auth
     ports:
-      - "9083:8080"
+      - "9083:8443"
     secrets:
       - jwt_private_key
       - jwt_public_key
+      - source: tls_ca
+        target: tls_ca
+      - source: auth_cert
+        target: tls_cert
+      - source: auth_key
+        target: tls_key
     environment:
-      QUARKUS_HTTP_PORT: 8080
+      QUARKUS_HTTP_SSL_PORT: 8443
       QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
       USER_SEEDER_ADMINPASSWORD: Admin123$
-      QUARKUS_REST_CLIENT_CLIENT_API_URL: http://sales-clients:8080
+      QUARKUS_REST_CLIENT_CLIENT_API_URL: https://sales-clients:8443
       SMALLRYE_JWT_SIGN_KEY_LOCATION: /run/secrets/jwt_private_key
       MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
       ORDERS_SERVICE_SECRET: ${ORDERS_SERVICE_SECRET:-OrderService1994*}
@@ -105,7 +129,25 @@ services:
 volumes:
   mongo-data:
 secrets:
-  jwt_private_key:
-    file: ./secrets/privateKey.pem
-  jwt_public_key:
-    file: ./secrets/publicKey.pem
+    jwt_private_key:
+      file: ./secrets/privateKey.pem
+    jwt_public_key:
+      file: ./secrets/publicKey.pem
+    tls_ca:
+      file: ./secrets/tls/ca.crt
+    products_cert:
+      file: ./secrets/tls/products.crt
+    products_key:
+      file: ./secrets/tls/products.key
+    clients_cert:
+      file: ./secrets/tls/clients.crt
+    clients_key:
+      file: ./secrets/tls/clients.key
+    orders_cert:
+      file: ./secrets/tls/orders.crt
+    orders_key:
+      file: ./secrets/tls/orders.key
+    auth_cert:
+      file: ./secrets/tls/auth.crt
+    auth_key:
+      file: ./secrets/tls/auth.key

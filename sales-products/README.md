@@ -16,6 +16,7 @@ exception/   → Excepciones de negocio
 mapper/
   exceptionMapper/ → Convierten excepciones en respuestas HTTP
 helper/      → Utilidades compartidas (ErrorResponseBuilder)
+filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
 ```
@@ -28,7 +29,7 @@ Usuario → ProductResource → ProductService → ProductRepository → MongoDB
 
 | Propiedad | Valor / descripción |
 |---|---|
-| `quarkus.http.port` | `8080` |
+| `quarkus.http.ssl-port` | `8080` en desarrollo, `8443` en Docker. Solo https (TLS/mTLS: ver el [README principal](../README.md#tls-y-mtls)) |
 | `quarkus.http.auth.proactive` | `false`: el token solo se valida donde hace falta |
 | `quarkus.mongodb.database` | `productdb` |
 | `mp.jwt.verify.issuer` | `https://benito-ventas.app` |

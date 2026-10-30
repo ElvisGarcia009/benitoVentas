@@ -1,4 +1,4 @@
-# Benito Ventas (Aún en fase de desarrollo)
+# Benito Ventas
 
 Sistema de ventas construido con **microservicios Quarkus + MongoDB**. Permite consultar un catálogo de productos sin autenticación, registrarse como cliente, comprar con el saldo de la cuenta y que un administrador gestione productos, usuarios, clientes y órdenes.
 
@@ -90,19 +90,39 @@ Todo cliente es un usuario, pero no todo usuario es un cliente (un administrador
    cd ..
    ```
 
-2. Compilar cada servicio (el Dockerfile copia `target/quarkus-app`):
+2. Generar la CA propia y los certificados TLS en `secrets/tls/` (tampoco se versiona):
+
+   ```bash
+   mkdir -p secrets/tls
+   docker run --rm -v "${PWD}/secrets/tls:/tls" -w /tls alpine sh -c '
+   apk add -q openssl
+   openssl genrsa -out ca.key 2048
+   openssl req -x509 -new -key ca.key -days 365 -subj "/CN=Benito-CA" -out ca.crt
+   for s in products clients orders auth admin; do
+     openssl genrsa -out $s.key 2048
+     openssl req -new -key $s.key -subj "/CN=sales-$s" -out $s.csr
+     echo "subjectAltName=DNS:sales-$s,DNS:localhost" > $s.ext
+     openssl x509 -req -in $s.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 365 -extfile $s.ext -out $s.crt
+   done
+   rm *.csr *.ext
+   chmod 640 products.key clients.key orders.key auth.key'
+   ```
+
+   El `chmod 640` hace falta porque Quarkus corre en el contenedor con el usuario `185` (grupo `root`) y tiene que poder leer su llave.
+
+3. Compilar cada servicio (el Dockerfile copia `target/quarkus-app`):
 
    ```bash
    for s in sales-products sales-clients sales-orders sales-auth; do (cd $s && ./mvnw package -DskipTests); done
    ```
 
-3. Levantar todo:
+4. Levantar todo:
 
    ```bash
    docker compose up --build -d
    ```
 
-Las claves llegan a los contenedores como **Docker secrets** (`/run/secrets/...`). Dentro de Docker, los servicios se llaman entre sí por su nombre y por el puerto interno 8080 (`http://sales-clients:8080`); los puertos 908x son solo para acceder desde fuera.
+Las claves y certificados llegan a los contenedores como **Docker secrets** (`/run/secrets/...`). Dentro de Docker, los servicios se llaman entre sí por su nombre y por el puerto interno 8443 (`https://sales-clients:8443`); los puertos 908x son solo para acceder desde fuera, también por https.
 
 Kafka tiene dos "puertas": `kafka:29092` para los contenedores y `localhost:9092` para lo que corre fuera de Docker (por ejemplo, un servicio en modo desarrollo).
 
@@ -128,6 +148,8 @@ Al arrancar, `sales-auth` crea un administrador si no existe:
 
 > En producción, esta contraseña vendría de un gestor de secretos, no del repositorio.
 
+Para probar desde Bruno o Postman: configurar `secrets/tls/ca.crt` como CA de confianza y, para los endpoints de admin, `admin.crt` / `admin.key` como certificado de cliente.
+
 ### Health checks
 
 Cada servicio expone:
@@ -138,7 +160,7 @@ Cada servicio expone:
 | `/q/health/live` | ¿El servicio está vivo? |
 | `/q/health/ready` | ¿Está listo para recibir peticiones? (MongoDB y, en orders, Kafka) |
 
-Ejemplo: `http://localhost:9082/q/health`.
+Ejemplo: `https://localhost:9082/q/health`.
 
 ---
 
@@ -162,10 +184,29 @@ Ejemplo: `http://localhost:9082/q/health`.
   - Para cobrar una orden, orders le pide a auth un token con el rol `orderService` (`POST /api/v1/auth/service-token`, con su nombre y su secreto). Hace falta porque el cobro ocurre en segundo plano, cuando el token del usuario puede haber vencido.
 - **Propagación del token:** al recibir la orden, orders valida el cliente reenviando el token del usuario. Clients aplica sus propias reglas con los permisos de ese usuario, ni más ni menos.
 - **Cada cliente solo accede a lo suyo:** clients y orders comparan el `userId` del token con el dueño del recurso.
-- **Autenticación no proactiva** (`quarkus.http.auth.proactive=false`): el token solo se valida en los endpoints que lo requieren.
+- **Autenticación no proactiva** (`quarkus.http.auth.proactive=false`).
 - **Rate limiting por IP** en los endpoints públicos: catálogo de productos, login y registro.
 - **Login sin filtraciones:** usuario inexistente y contraseña incorrecta responden el mismo 401, para no revelar qué usuarios existen.
 - **Contraseñas** guardadas con BCrypt; el hash nunca se devuelve en ninguna respuesta.
+
+### TLS y mTLS
+
+| Comunicación | Protección |
+|---|---|
+| Usuarios externos → servicios | **TLS**: solo necesitan confiar en `ca.crt` |
+| Admin → servicios | **mTLS**: presenta `admin.crt` |
+| Servicio → servicio | **mTLS**: cada servicio presenta su propio certificado |
+
+- Una **CA propia** firma un certificado por servicio y uno para el admin. El SAN de cada certificado incluye el nombre del servicio en Docker y `localhost`.
+- Todo es **https** (`quarkus.http.insecure-requests=disabled`).
+- Cada servicio **pide** certificado de cliente (`quarkus.http.ssl.client-auth=request`) y lo valida contra la CA: uno que no firmó la CA se rechaza en el handshake.
+- Los REST clients usan la configuración TLS `internal`, así que siempre presentan el certificado del servicio que llama.
+- **`MtlsGuardFilter`** (en los 4 servicios): si el token tiene un rol privilegiado (`admin`, `aService`, `orderService`) y no se presentó certificado, responde **403**.
+- `quarkus.smallrye-jwt.priority=2000`: el JWT se evalúa antes que el certificado, para que los roles salgan siempre del token.
+
+**Por qué `request` + filtro y no `required`:** el mismo puerto atiende a usuarios externos (solo TLS) y a admins y servicios (mTLS). Con `required`, ningún usuario sin certificado podría ver el catálogo ni registrarse. En producción se separaría con un API gateway o un service mesh, y los servicios exigirían el certificado siempre.
+
+**Fuera de alcance:** TLS hacia Kafka y MongoDB.
 
 ---
 
@@ -229,7 +270,6 @@ Decisiones tomadas conscientemente para el tiempo de la prueba:
 
 ## Pendientes
 
-- [ ] TLS hacia el exterior y mTLS entre servicios.
 - [ ] `ConstraintViolationMapper` con status 400 en products, clients y auth (hoy 500).
 - [ ] Mensajes en los 401/403 y mappers `UnauthorizedMapper` / `ForbiddenMapper` en auth.
 - [ ] Pruebas Unitarias.

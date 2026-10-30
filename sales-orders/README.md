@@ -21,6 +21,7 @@ exception/   → Excepciones de negocio y de los otros servicios
 mapper/
   exceptionMapper/ → Convierten excepciones en respuestas HTTP
 helper/      → ErrorResponseBuilder
+filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
 ```
@@ -61,11 +62,11 @@ Las líneas son documentos **incrustados** dentro de la orden. Mientras la orden
 
 | Propiedad | Valor / descripción |
 |---|---|
-| `quarkus.http.port` | `8084` |
+| `quarkus.http.ssl-port` | `8084` en desarrollo, `8443` en Docker. Solo https (TLS/mTLS: ver el [README principal](../README.md#tls-y-mtls)) |
 | `quarkus.mongodb.database` | `ordersdb` |
-| `quarkus.rest-client.product-api.url` | En desarrollo: `http://localhost:8080`. En Docker: `http://sales-products:8080` |
-| `quarkus.rest-client.client-api.url` | En desarrollo: `http://localhost:8081`. En Docker: `http://sales-clients:8080` |
-| `quarkus.rest-client.auth-api.url` | En desarrollo: `http://localhost:8083`. En Docker: `http://sales-auth:8080` |
+| `quarkus.rest-client.product-api.url` | En desarrollo: `https://localhost:8080`. En Docker: `https://sales-products:8443` |
+| `quarkus.rest-client.client-api.url` | En desarrollo: `https://localhost:8081`. En Docker: `https://sales-clients:8443` |
+| `quarkus.rest-client.auth-api.url` | En desarrollo: `https://localhost:8083`. En Docker: `https://sales-auth:8443` |
 | `quarkus.rest-client.connect-timeout` / `read-timeout` | `2000` / `5000` ms |
 | `kafka.bootstrap.servers` | En desarrollo: `localhost:9092`. En Docker: `kafka:29092` |
 | `mp.messaging.outgoing.orders-out.*` | Canal de salida al topic `order-requests` |
