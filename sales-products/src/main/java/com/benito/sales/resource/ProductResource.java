@@ -59,6 +59,18 @@ public class ProductResource {
         return _productService.getProductById(validatedId);
     }
 
+    //THIS RESOURCE IS USED BY sales-orders TO PROCESS ORDERS (NO RATE LIMIT REQUIRED)
+    @GET
+    @Path("/internal/{id}")
+    @RolesAllowed("orderService")
+    public ProductResponseDTO getProductForService(@PathParam("id") String id)
+    {
+        ObjectId validatedId = validateId(id);
+
+        //Quarkus return this with a 200 status code
+        return _productService.getProductById(validatedId);
+    }
+
 
     @POST
     @RolesAllowed("admin")

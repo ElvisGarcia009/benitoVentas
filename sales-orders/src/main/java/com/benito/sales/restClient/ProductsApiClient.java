@@ -10,7 +10,8 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 public interface ProductsApiClient {
 
     @GET
-    @Path("/{id}")
+    @Path("/internal/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    ProductResponseDTO getProductById(@PathParam("id") String id);
+    ProductResponseDTO getProductById(@HeaderParam("Authorization") String authorization,
+                                      @PathParam("id") String id);
 }

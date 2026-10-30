@@ -143,13 +143,16 @@ public class OrderService {
 
         try
         {
+            //SERVICE REQUEST HIS OWN TOKEN
+            String serviceToken = _serviceTokenProvider.getAuthorizationToken();
+
             //GET THE PRODUCTS INFORMATION AND CALCULATE THE TOTALS
             List<OrderProductRecord> productsWithInfo = new ArrayList<>();
             BigDecimal orderTotal = BigDecimal.ZERO;
 
             for (OrderProductRecord requestedProduct : order.products)
             {
-                ProductResponseDTO productFound = getProduct(requestedProduct.productId());
+                ProductResponseDTO productFound = getProduct(serviceToken, requestedProduct.productId());
 
                 BigDecimal totalPerProduct = productFound.price.multiply(BigDecimal.valueOf(requestedProduct.quantity()));
                 orderTotal = orderTotal.add(totalPerProduct);
@@ -165,7 +168,7 @@ public class OrderService {
             order.orderTotal = orderTotal;
 
             //CHARGE THE CLIENT WITH THE SERVICE OWN TOKEN
-            chargeClient(_serviceTokenProvider.getAuthorizationToken(), order.clientId, orderTotal);
+            chargeClient(serviceToken, order.clientId, orderTotal);
 
             order.orderStatus = OrderState.COMPLETED;
         }
@@ -249,11 +252,11 @@ public class OrderService {
     }
 
     //CALLS THE PRODUCTS SERVICE TO GET A PRODUCT
-    private ProductResponseDTO getProduct(String productId)
+    private ProductResponseDTO getProduct(String authorization, String productId)
     {
         try
         {
-            return _productsApi.getProductById(productId);
+            return _productsApi.getProductById(authorization, productId);
         }
         catch (WebApplicationException exception)
         {
