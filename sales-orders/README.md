@@ -71,10 +71,12 @@ Las líneas son documentos **incrustados** dentro de la orden. Mientras la orden
 | `kafka.bootstrap.servers` | En desarrollo: `localhost:9092`. En Docker: `kafka:29092` |
 | `mp.messaging.outgoing.orders-out.*` | Canal de salida al topic `order-requests` |
 | `mp.messaging.incoming.orders-in.*` | Canal de entrada del topic `order-requests`, grupo `orders-processor`, `auto.offset.reset=earliest`, `failure-strategy=dead-letter-queue` |
+| `kafka.security.protocol` / `kafka.ssl.*` | `SSL` con `orders.pem` (certificado + llave) y `ca.crt`: mTLS hacia Kafka. En desarrollo, `PLAINTEXT` |
 | `orders.service.secret` | Secreto para pedir el token de servicio (en Docker: `ORDERS_SERVICE_SECRET`) |
 | `quarkus.kafka.health.enabled` | `true`: el health check también revisa Kafka |
 | `mp.jwt.verify.issuer` | `https://benito-ventas.app` |
 | `mp.jwt.verify.publickey.location` | En desarrollo: `src/main/resources/publicKey.pem`. En Docker: `/run/secrets/jwt_public_key` |
+| `quarkus.swagger-ui.always-include` | Swagger UI disponible también en Docker, en `/q/swagger-ui` |
 
 ---
 
@@ -161,16 +163,19 @@ El cliente usa el `id` recibido para consultar el resultado:
 
 4. `OrderConsumer` recibe el mensaje y llama a `OrderService.processOrder`.
 5. Si la orden no existe, está desactivada o ya no está en `PENDING`, **no hace nada** (consumidor idempotente: procesar dos veces el mismo mensaje no cobra dos veces).
-6. **Busca cada producto** en `sales-products` y calcula el total de cada línea y el de la orden.
-7. **Pide un token de servicio** a `sales-auth` y **cobra el saldo** en `sales-clients`.
-8. Guarda la orden como `COMPLETED`.
+6. **Pide un token de servicio** a `sales-auth` (uno por orden).
+7. **Busca cada producto** en el endpoint interno de `sales-products` (`/api/v1/product/internal/{id}`, sin rate limit) y calcula el total de cada línea y el de la orden.
+8. **Cobra el saldo** en `sales-clients` con el mismo token.
+9. Guarda la orden como `COMPLETED`.
 
 Si algo falla:
 
 | Tipo de error | Ejemplos | Qué pasa |
 |---|---|---|
 | De negocio | Saldo insuficiente, producto inexistente | `REJECTED` con el motivo en `rejectionReason` |
-| Técnico | Un servicio caído, error inesperado | `REJECTED` con "The order could not be processed, please try again later" y el mensaje va a la **dead letter queue** |
+| Técnico | Un servicio caído | Se reintenta 2 veces (solo leer productos y pedir el token; el cobro nunca). Si sigue caído: `REJECTED` con "The order could not be processed, please try again later" |
+
+La **dead letter queue** solo recibe mensajes cuya orden sigue en `PENDING` (por ejemplo, si falla MongoDB al guardar), así se pueden reprocesar.
 
 Una orden rechazada por saldo insuficiente conserva el total calculado (sirve para ver cuánto faltaba). Una rechazada por un producto inexistente queda con el total en `null`, porque falló antes de poder calcularlo.
 
@@ -204,12 +209,32 @@ Los errores que ocurren al procesar (saldo insuficiente, producto inexistente) n
 ## Decisiones de diseño
 
 - **Órdenes encoladas en Kafka (pub-sub)**: el usuario recibe respuesta rápida (`202`) aunque products o clients estén lentos, y las órdenes no se pierden si el procesamiento falla: quedan en el topic.
+
+
 - **`REJECTED` en lugar de borrar**: antes, si el cobro fallaba, la orden se borraba. Ahora queda guardada con su motivo, así el cliente puede ver qué pasó.
+
+
 - **La validación del cliente es síncrona**: si alguien intenta comprar a nombre de otra ficha, se entera en el momento (`403`) y no se encola nada.
-- **Token de servicio para cobrar**: el consumidor no tiene el token del usuario (puede haber vencido). Por eso pide a `sales-auth` un token propio de 1 minuto con el rol `orderService`.
+
+
+- **Token de servicio para procesar**: el consumidor no tiene el token del usuario (puede haber vencido). Por eso pide a `sales-auth` un token propio de 1 minuto con el rol `orderService`, que usa para leer productos y cobrar.
+
+
+- **Endpoint interno de productos**: el endpoint público tiene rate limit por IP, y todas las llamadas de orders vienen de la misma IP. Con el endpoint interno, el procesamiento de órdenes no compite con el límite de los usuarios.
+
+
+- **Reintentar solo lo seguro**: leer un producto se puede repetir sin riesgo; cobrar no, porque si el cobro se hizo, pero la respuesta se perdió, reintentar cobraría dos veces.
+
+
 - **Snapshot del momento de la compra**: la orden guarda nombre y precio de cada producto. Si mañana el producto cambia, la orden sigue mostrando lo que se pagó.
+
+
 - **El total lo calcula el servidor**, nunca se acepta del cliente.
+
+
 - **El admin compra a nombre de un cliente** indicando su `clientId`; no necesita ficha propia.
+
+
 - **Se guarda el `userId`** en la orden para filtrar "mis órdenes" sin llamar a clients.
 
 ## Fuera del alcance de la prueba

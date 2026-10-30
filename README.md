@@ -72,6 +72,7 @@ Todo cliente es un usuario, pero no todo usuario es un cliente (un administrador
 - **BCrypt** (`quarkus-elytron-security-common`) para el hash de contraseñas
 - **Apache Kafka** + **SmallRye Reactive Messaging** (`quarkus-messaging-kafka`) para encolar las órdenes
 - **SmallRye Health** (`quarkus-smallrye-health`) para los health checks
+- **SmallRye OpenAPI** + **Swagger UI** (`quarkus-smallrye-openapi`) para documentar la API
 - **Docker Compose** para levantar todo el sistema
 
 ---
@@ -104,11 +105,19 @@ Todo cliente es un usuario, pero no todo usuario es un cliente (un administrador
      echo "subjectAltName=DNS:sales-$s,DNS:localhost" > $s.ext
      openssl x509 -req -in $s.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 365 -extfile $s.ext -out $s.crt
    done
+   openssl genrsa -out kafka.key 2048
+   openssl req -new -key kafka.key -subj "/CN=kafka" -out kafka.csr
+   echo "subjectAltName=DNS:kafka,DNS:localhost" > kafka.ext
+   openssl x509 -req -in kafka.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 365 -extfile kafka.ext -out kafka.crt
    rm *.csr *.ext
-   chmod 640 products.key clients.key orders.key auth.key'
+   cat kafka.key kafka.crt > kafka.pem
+   cat orders.key orders.crt > orders.pem
+   chmod 640 products.key clients.key orders.key auth.key orders.pem
+   chown 1000 kafka.pem && chmod 600 kafka.pem'
    ```
 
-   El `chmod 640` hace falta porque Quarkus corre en el contenedor con el usuario `185` (grupo `root`) y tiene que poder leer su llave.
+   - Los permisos hacen falta porque Quarkus corre en el contenedor con el usuario `185` (grupo `root`) y Kafka con el usuario `1000`, y cada uno tiene que poder leer su llave.
+   - Kafka usa la llave y el certificado en un solo archivo (`.pem`); orders usa `orders.pem` para conectarse a Kafka.
 
 3. Compilar cada servicio (el Dockerfile copia `target/quarkus-app`):
 
@@ -162,6 +171,19 @@ Cada servicio expone:
 
 Ejemplo: `https://localhost:9082/q/health`.
 
+### Documentación de la API (Swagger)
+
+| Servicio | URL |
+|---|---|
+| sales-products | `https://localhost:9080/q/swagger-ui` |
+| sales-clients | `https://localhost:9081/q/swagger-ui` |
+| sales-orders | `https://localhost:9082/q/swagger-ui` |
+| sales-auth | `https://localhost:9083/q/swagger-ui` |
+
+- El navegador muestra una advertencia de certificado porque no conoce la CA propia: se puede aceptar, o importar `secrets/tls/ca.crt` como CA de confianza.
+- El botón **Authorize** acepta el JWT del login.
+- Los endpoints públicos y de cliente se pueden probar desde Swagger; los de admin no, porque el navegador no presenta el certificado del admin (para eso, Bruno o curl con `admin.crt`).
+
 ---
 
 ## Flujo principal
@@ -181,11 +203,11 @@ Ejemplo: `https://localhost:9082/q/health`.
 - **Roles:** `admin`, `client`, y dos roles de servicio: `aService` y `orderService`.
 - **Tokens de servicio** (duran **1 minuto**):
   - Para crear la ficha de un cliente, auth se firma un token propio con el rol `aService`. Así nadie más puede crear fichas directamente en clients.
-  - Para cobrar una orden, orders le pide a auth un token con el rol `orderService` (`POST /api/v1/auth/service-token`, con su nombre y su secreto). Hace falta porque el cobro ocurre en segundo plano, cuando el token del usuario puede haber vencido.
+  - Para leer productos y cobrar una orden, orders le pide a auth un token con el rol `orderService` (`POST /api/v1/auth/service-token`). Auth solo lo entrega si orders **presenta su certificado** y además envía su secreto, así el secreto no se puede adivinar a fuerza de intentos. Hace falta porque el procesamiento ocurre en segundo plano, cuando el token del usuario puede haber vencido.
 - **Propagación del token:** al recibir la orden, orders valida el cliente reenviando el token del usuario. Clients aplica sus propias reglas con los permisos de ese usuario, ni más ni menos.
 - **Cada cliente solo accede a lo suyo:** clients y orders comparan el `userId` del token con el dueño del recurso.
 - **Autenticación no proactiva** (`quarkus.http.auth.proactive=false`).
-- **Rate limiting por IP** en los endpoints públicos: catálogo de productos, login y registro.
+- **Rate limiting por IP** en los endpoints públicos: catálogo de productos, login y registro. Orders lee los productos por un endpoint interno (`/api/v1/product/internal/{id}`, solo rol `orderService` + certificado), así el límite de los usuarios no frena el procesamiento de órdenes.
 - **Login sin filtraciones:** usuario inexistente y contraseña incorrecta responden el mismo 401, para no revelar qué usuarios existen.
 - **Contraseñas** guardadas con BCrypt; el hash nunca se devuelve en ninguna respuesta.
 
@@ -196,6 +218,7 @@ Ejemplo: `https://localhost:9082/q/health`.
 | Usuarios externos → servicios | **TLS**: solo necesitan confiar en `ca.crt` |
 | Admin → servicios | **mTLS**: presenta `admin.crt` |
 | Servicio → servicio | **mTLS**: cada servicio presenta su propio certificado |
+| sales-orders ↔ Kafka | **mTLS obligatorio**: Kafka rechaza cualquier conexión sin un certificado firmado por la CA |
 
 - Una **CA propia** firma un certificado por servicio y uno para el admin. El SAN de cada certificado incluye el nombre del servicio en Docker y `localhost`.
 - Todo es **https** (`quarkus.http.insecure-requests=disabled`).
@@ -206,7 +229,9 @@ Ejemplo: `https://localhost:9082/q/health`.
 
 **Por qué `request` + filtro y no `required`:** el mismo puerto atiende a usuarios externos (solo TLS) y a admins y servicios (mTLS). Con `required`, ningún usuario sin certificado podría ver el catálogo ni registrarse. En producción se separaría con un API gateway o un service mesh, y los servicios exigirían el certificado siempre.
 
-**Fuera de alcance:** TLS hacia Kafka y MongoDB.
+**Kafka:** el listener interno (`kafka:29092`) usa SSL con `ssl.client.auth=required`. Aquí sí se exige siempre, porque solo los servicios se conectan a Kafka. El listener externo (`localhost:9092`) queda sin TLS, solo para el modo desarrollo.
+
+**Fuera de alcance:** TLS hacia MongoDB.
 
 ---
 
@@ -255,7 +280,8 @@ Las órdenes de compra se encolan como mensajes en Kafka:
 - **Consumidor:** el mismo `sales-orders` (grupo `orders-processor`) lee el topic y procesa cada orden.
 - **Mensaje:** llave = `clientId`, valor = `id` de la orden. Con la llave, las órdenes de un mismo cliente van a la misma partición y se procesan en orden, así dos compras simultáneas no leen el mismo saldo.
 - **Consumidor idempotente:** solo procesa órdenes en `PENDING`; si un mensaje llega dos veces, no cobra dos veces.
-- **Errores técnicos** (un servicio caído): la orden queda `REJECTED` y el mensaje va a una **dead letter queue**, en lugar de detener el consumidor.
+- **Errores técnicos** (un servicio caído): las llamadas que se pueden repetir sin riesgo (leer productos, pedir el token) se **reintentan 2 veces**. El cobro **nunca** se reintenta, para no cobrar dos veces. Si el servicio sigue caído, la orden queda `REJECTED` con un motivo claro y el cliente puede volver a ordenar.
+- **Dead letter queue:** solo recibe mensajes cuya orden sigue en `PENDING` (por ejemplo, si falla MongoDB al guardar), así se pueden reprocesar.
 
 Detalle completo en el [README de sales-orders](sales-orders/README.md).
 
@@ -266,10 +292,17 @@ Detalle completo en el [README de sales-orders](sales-orders/README.md).
 Decisiones tomadas conscientemente para el tiempo de la prueba:
 
 - **Inventario (stock):** los productos no manejan existencias.
-- **Más estados de la orden** (pagada, enviada, cancelada) y **reembolsos:** desactivar una orden no devuelve el saldo.
+- **Más estados de la orden** (pagada, enviada, cancelada)
+- **reembolsos:** desactivar una orden no devuelve el saldo.
 
-## Pendientes
+## Pruebas
 
-- [ ] `ConstraintViolationMapper` con status 400 en products, clients y auth (hoy 500).
-- [ ] Mensajes en los 401/403 y mappers `UnauthorizedMapper` / `ForbiddenMapper` en auth.
-- [ ] Pruebas Unitarias.
+- **Unitarias** (JUnit + Mockito, sin Quarkus ni infraestructura), enfocadas en la lógica crítica: procesamiento de órdenes (completada, rechazada, idempotencia), saldo insuficiente, borrado lógico de productos y el token de servicio. Se corren con `./mvnw test` en cada servicio.
+- **De punta a punta** sobre Docker, durante el desarrollo: TLS/mTLS (con y sin certificado, certificado falso), Kafka con mTLS, rate limit, carga de órdenes y caída de servicios.
+
+## Limitaciones conocidas
+
+- **Cobro ambiguo:** si clients cobra pero su respuesta no llega (timeout), la orden queda `REJECTED` aunque el saldo se descontó. Resolverlo requiere una clave de idempotencia en el cobro.
+- **Rate limit por IP detrás de un proxy:** si todas las peticiones llegan desde la misma IP (un balanceador, la red de Docker), el límite se vuelve global. En producción iría en el gateway o leería `X-Forwarded-For`.
+- **Usuario y ficha independientes:** desactivar un usuario no desactiva su ficha de cliente, y al revés.
+- **Los cambios de rol o la desactivación** aplican cuando vence el token (15 minutos).

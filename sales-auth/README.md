@@ -51,6 +51,7 @@ filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servici
 | `user.seeder.adminPassword` | Contraseña del administrador inicial (en Docker: `USER_SEEDER_ADMINPASSWORD`) |
 | `orders.service.secret` | Secreto que debe enviar `sales-orders` para pedir su token (en Docker: `ORDERS_SERVICE_SECRET`) |
 | `quarkus.rate-limiter.buckets.authentication.*` | 10 peticiones por segundo y 100 cada 5 minutos, por IP |
+| `quarkus.swagger-ui.always-include` | Swagger UI disponible también en Docker, en `/q/swagger-ui` |
 
 La clave privada **solo existe en este servicio** y no se versiona (`secrets/` está en `.gitignore`).
 
@@ -65,7 +66,7 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 | Servicio (orders) | `orders-service` | — | `orderService` | 1 minuto |
 
 - `aService`: auth se lo firma a sí mismo para crear la ficha del cliente en `sales-clients` durante el registro.
-- `orderService`: lo pide `sales-orders` para cobrar el saldo cuando procesa una orden desde Kafka.
+- `orderService`: lo pide `sales-orders` para leer los productos y cobrar el saldo cuando procesa una orden desde Kafka.
 
 ---
 
@@ -114,7 +115,7 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 { "serviceName": "orders-service", "secret": "..." }
 ```
 
-Solo acepta `orders-service` con el secreto correcto; si no, responde `401`. El secreto se compara con `MessageDigest.isEqual`, que tarda lo mismo acierte o falle, para no dar pistas a quien intente adivinarlo.
+Solo acepta a quien **presente el certificado de `sales-orders`** (mTLS) y envíe el secreto correcto; si falta cualquiera de los dos, responde el mismo `401`. Sin el certificado, ni siquiera se compara el secreto, así que no se puede adivinar a fuerza de intentos. El secreto se compara con `MessageDigest.isEqual`, que tarda lo mismo acierte o falle, para no dar pistas a quien intente adivinarlo.
 
 ### Usuarios: `/api/v1/user`
 
@@ -164,7 +165,15 @@ Respuesta (`UserResponseDTO`, sin el hash):
 ## Decisiones de diseño
 
 - **Gestión de usuarios dentro de auth**: el login necesita el hash y los roles, así que el servicio dueño de esos datos también es dueño de su CRUD.
+
+
 - **`username` y `email` inmutables**: son la identidad del usuario y viajan en el token.
+
+
 - **El login no revela qué usuarios existen**: mismo 401 y mismo mensaje para usuario inexistente y contraseña incorrecta.
+
+
 - **El primer admin se crea solo al arrancar** (`AdminSeeder`), para que el sistema sea usable sin pasos manuales.
+
+
 - **Los cambios de rol aplican en el siguiente login**: el token vigente conserva los roles anteriores hasta vencer.

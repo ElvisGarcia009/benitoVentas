@@ -112,7 +112,7 @@ public class AuthService {
                 _ordersServiceSecret.getBytes(StandardCharsets.UTF_8));
 
         if (!"orders-service".equals(request.serviceName) || !validSecret)
-            throw new InvalidCredentialsException();
+            throw new InvalidServiceCredentialsException();
 
         return  TokenGenerator.buildServiceToken(request.serviceName, Set.of("orderService"));
     }

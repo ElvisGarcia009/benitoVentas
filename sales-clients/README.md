@@ -46,6 +46,7 @@ Usuario / sales-auth / sales-orders → ClientResource → ClientService → Cli
 | `quarkus.mongodb.database` | `clientdb` |
 | `mp.jwt.verify.issuer` | `https://benito-ventas.app` |
 | `mp.jwt.verify.publickey.location` | En desarrollo: `src/main/resources/publicKey.pem`. En Docker: `/run/secrets/jwt_public_key` |
+| `quarkus.swagger-ui.always-include` | Swagger UI disponible también en Docker, en `/q/swagger-ui` |
 
 ---
 
@@ -60,7 +61,7 @@ Ruta base: `/api/v1/client`
 | `POST` | `/api/v1/client` | `aService` (solo `sales-auth`) | Crea la ficha de un usuario recién registrado | `201` + `Location` |
 | `PUT` | `/api/v1/client/{id}` | `admin`, `client` (solo la suya) | Actualiza los datos editables | `200` |
 | `DELETE` | `/api/v1/client/{id}` | `admin` | Desactiva una ficha | `204` |
-| `POST` | `/api/v1/client/{id}/balance/debit` | `admin`, `client` (solo la suya), `orderService` | Descuenta saldo (lo usa `sales-orders` al cobrar) | `200` |
+| `POST` | `/api/v1/client/{id}/balance/debit` | `admin`, `client` (solo la suya), `orderService` (con certificado) | Descuenta saldo (lo usa `sales-orders` al cobrar) | `200` |
 | `POST` | `/api/v1/client/{id}/balance/credit` | `admin` | Recarga saldo | `200` |
 
 ### `POST /api/v1/client` (lo llama `sales-auth`)
@@ -135,9 +136,18 @@ Mismas reglas que arriba para estos campos. No incluye `balance`: el saldo solo 
 ## Decisiones de diseño
 
 - **Solo `sales-auth` crea fichas**, usando un token de servicio con rol `aService`. Así toda ficha tiene un usuario detrás.
-- **El chequeo de "solo lo suyo" está en el service**: compara el `userId` guardado en la ficha con el claim `userId` del token. El resource no puede hacerlo porque solo tiene el id de la ruta, que es el de la ficha, no el del usuario.
-- **`orderService` puede cobrar a cualquier ficha**, igual que el admin: es el token que usa `sales-orders` al procesar una orden. La validación de que la ficha es del usuario ya se hizo en orders, al recibir la orden.
-- **El saldo tiene endpoints propios** (`debit` y `credit`) en lugar de editarse con el `PUT`. Así un cliente no puede asignarse saldo a sí mismo, y solo el admin puede recargarlo.
-- **Saldo insuficiente → 422**: la petición es correcta, pero rompe una regla de negocio.
-- **Un DTO por operación**: `ClientRequestDTO` para crear y `ClientUpdateRequestDTO` para editar.
 
+
+- **El chequeo de "solo lo suyo" está en el service**: compara el `userId` guardado en la ficha con el claim `userId` del token. El resource no puede hacerlo porque solo tiene el id de la ruta, que es el de la ficha, no el del usuario.
+
+
+- **`orderService` puede cobrar a cualquier ficha**, igual que el admin: es el token que usa `sales-orders` al procesar una orden. La validación de que la ficha es del usuario ya se hizo en orders, al recibir la orden.
+
+
+- **El saldo tiene endpoints propios** (`debit` y `credit`) en lugar de editarse con el `PUT`. Así un cliente no puede asignarse saldo a sí mismo, y solo el admin puede recargarlo.
+
+
+- **Saldo insuficiente → 422**: la petición es correcta, pero rompe una regla de negocio.
+
+
+- **Un DTO por operación**: `ClientRequestDTO` para crear y `ClientUpdateRequestDTO` para editar.
