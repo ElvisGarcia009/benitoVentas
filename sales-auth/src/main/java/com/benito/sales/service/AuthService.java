@@ -14,8 +14,6 @@ import com.benito.sales.repository.UserRepository;
 import com.benito.sales.restClient.ClientsApiClient;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.ProcessingException;
-import jakarta.ws.rs.WebApplicationException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
@@ -77,8 +75,7 @@ public class AuthService {
         {
             _clientsApiClient.createClient("Bearer " + serviceToken, newClient);
         }
-        catch (WebApplicationException | ProcessingException exception) // CATCH WHEN CLIENT SERVICE ANSWERS WITH AN
-                                                                        // EXCEPTION OR IS TIMED OUT
+        catch (RuntimeException exception) // CATCH ANY ERROR WHILE CREATING THE CLIENT PROFILE
         {
             //FALLBACK: THE USER IS DELETED BECAUSE HIS CLIENT PROFILE COULD NOT BE CREATED
             LOG.error("Client profile could not be created, rolling back user: " + newUser.id, exception);

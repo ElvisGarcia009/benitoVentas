@@ -14,6 +14,11 @@ services:
     container_name: kafka
     ports:
       - "9092:9092"
+    secrets:
+      - source: kafka_pem
+        target: kafka_pem
+      - source: tls_ca
+        target: tls_ca
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -21,12 +26,18 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENERS: EXTERNAL://:9092,INTERNAL://:29092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:SSL,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_NUM_PARTITIONS: 3
+      KAFKA_SSL_KEYSTORE_TYPE: PEM
+      KAFKA_SSL_KEYSTORE_LOCATION: /run/secrets/kafka_pem
+      KAFKA_SSL_TRUSTSTORE_TYPE: PEM
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /run/secrets/tls_ca
+      KAFKA_SSL_CLIENT_AUTH: required
+
   sales-products:
     build:
       context: ./sales-products
@@ -84,6 +95,8 @@ services:
         target: tls_cert
       - source: orders_key
         target: tls_key
+      - source: orders_kafka_pem
+        target: tls_kafka_pem
     environment:
       QUARKUS_HTTP_SSL_PORT: 8443
       QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
@@ -151,3 +164,7 @@ secrets:
       file: ./secrets/tls/auth.crt
     auth_key:
       file: ./secrets/tls/auth.key
+    kafka_pem:
+      file: ./secrets/tls/kafka.pem
+    orders_kafka_pem:
+      file: ./secrets/tls/orders.pem

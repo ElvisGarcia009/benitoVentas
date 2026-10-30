@@ -11,7 +11,7 @@ public class ProductRequestDTO {
     public String name;
 
     @NotBlank(message = "description cannot be empty")
-    @Size(max = 500, message = "name cannot be longer than 500 characters")
+    @Size(max = 500, message = "description cannot be longer than 500 characters")
     public String description;
 
     @PositiveOrZero(message = "price cannot be negative")

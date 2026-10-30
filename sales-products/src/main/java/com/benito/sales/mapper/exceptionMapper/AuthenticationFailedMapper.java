@@ -13,7 +13,7 @@ public class AuthenticationFailedMapper implements ExceptionMapper<Authenticatio
     public Response toResponse(AuthenticationFailedException exception) {
 
         return ErrorResponseBuilder.build("AUTHENTICATION FAILED",
-                                          exception.getMessage(),
+                                          "The token is invalid or has expired",
                                         401);
     }
 }

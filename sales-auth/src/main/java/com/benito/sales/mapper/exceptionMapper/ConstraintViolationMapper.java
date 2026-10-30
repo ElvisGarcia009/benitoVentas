@@ -20,6 +20,6 @@ public class ConstraintViolationMapper implements ExceptionMapper<ConstraintViol
 
         return ErrorResponseBuilder.build("BAD REQUEST",
                                           errorMessage,
-                                         500);
+                                         400);
     }
 }

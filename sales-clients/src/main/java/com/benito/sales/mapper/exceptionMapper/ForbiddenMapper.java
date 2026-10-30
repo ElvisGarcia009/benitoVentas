@@ -13,7 +13,7 @@ public class ForbiddenMapper implements ExceptionMapper<ForbiddenException> {
     public Response toResponse(ForbiddenException exception) {
 
         return ErrorResponseBuilder.build("FORBIDDEN",
-                                         exception.getMessage(),
+                                         "You do not have permission to access this resource",
                                         403);
 
     }

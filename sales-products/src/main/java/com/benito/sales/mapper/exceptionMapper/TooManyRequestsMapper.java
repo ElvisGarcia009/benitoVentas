@@ -12,7 +12,8 @@ public class TooManyRequestsMapper implements ExceptionMapper<RateLimitException
     @Override
     public Response toResponse(RateLimitException exception) {
 
-        long secondsToWait = exception.getWaitTimeInMilliSeconds() / 1000;
+        //ROUND UP TO THE NEXT SECOND, SO A WAIT SHORTER THAN ONE SECOND SHOWS 1s INSTEAD OF 0s
+        long secondsToWait = (exception.getWaitTimeInMilliSeconds() + 999) / 1000;
 
         return ErrorResponseBuilder.build("TOO MANY REQUESTS",
                                            "Retry after: " + secondsToWait + "s",

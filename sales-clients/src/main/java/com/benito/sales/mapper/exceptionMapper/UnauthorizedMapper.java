@@ -13,8 +13,8 @@ public class UnauthorizedMapper implements ExceptionMapper<UnauthorizedException
     public Response toResponse(UnauthorizedException exception) {
 
         return ErrorResponseBuilder.build("UNAUTHORIZED",
-                                            exception.getMessage(),
-                                            401);
+                                          "Authentication is required to access this resource",
+                                          401);
 
     }
 }
