@@ -173,7 +173,7 @@ public class OrderService {
             order.orderStatus = OrderState.COMPLETED;
         }
         catch (InsufficientBalanceException | ProductNotFoundException | InvalidIdException
-               | ClientNotFoundException | ClientAccessDeniedException exception)
+               | ClientNotFoundException | ClientAccessDeniedException | ConflictUpdateException exception)
         {
             //BUSINESS ERRORS: THE ORDER IS REJECTED AND THE CONSUMER KEEPS GOING
             order.orderStatus = OrderState.REJECTED;
@@ -285,6 +285,7 @@ public class OrderService {
                 case 422: throw new InsufficientBalanceException();
                 case 404: throw new ClientNotFoundException(clientId);
                 case 403: throw new ClientAccessDeniedException();
+                case 409: throw new ConflictUpdateException();
                 default: throw new ExternalServiceException("clients");
             }
         }
@@ -294,3 +295,5 @@ public class OrderService {
         }
     }
 }
+
+

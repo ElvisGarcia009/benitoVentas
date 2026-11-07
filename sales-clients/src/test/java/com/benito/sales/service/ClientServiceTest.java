@@ -28,15 +28,18 @@ class ClientServiceTest {
         client.status = true;
         client.balance = new BigDecimal("100.00");
 
+        Client clientResult = new Client();
+        BigDecimal toDebit = new BigDecimal("150.00");
+
         when(fakeRepository.findById(id)).thenReturn(client);
 
         //ACT + ASSERT
         assertThrows(InsufficientBalanceException.class,
-                () -> service.debitBalance(id, new BigDecimal("150.00"), "user-1", false, "ana"));
+                () -> service.debitBalance(id, toDebit, "user-1", false, "ana"));
 
         //THE BALANCE DID NOT CHANGE AND NOTHING WAS SAVED
         assertEquals(new BigDecimal("100.00"), client.balance);
-        verify(fakeRepository, never()).update(any(Client.class));
+        verify(fakeRepository, never()).debitAtomicUpdate(any(Client.class), toDebit);
     }
 
     @Test

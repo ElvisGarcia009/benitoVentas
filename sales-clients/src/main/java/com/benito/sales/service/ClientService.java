@@ -7,6 +7,7 @@ import com.benito.sales.dto.ClientsPaginatedDTO;
 import com.benito.sales.entity.Client;
 import com.benito.sales.exception.ClientAccessDeniedException;
 import com.benito.sales.exception.ClientNotFoundException;
+import com.benito.sales.exception.ConflictUpdateException;
 import com.benito.sales.exception.InsufficientBalanceException;
 import com.benito.sales.repository.ClientRepository;
 import io.quarkus.mongodb.panache.PanacheQuery;
@@ -73,24 +74,38 @@ public class ClientService {
     public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount,
                                           String callerUserId, boolean isPrivileged, String username)
     {
-        Client clientFound = findValidClient(id);
-        verifyClientAccess(clientFound, callerUserId, isPrivileged);
+        int retry = 0;
 
-        BigDecimal balanceAfterBuying = clientFound.balance.subtract(amount);
+        do
+        {
+            Client clientFound = findValidClient(id);
+            verifyClientAccess(clientFound, callerUserId, isPrivileged);
 
-        //CAN THE CLIENT PAY THIS?
-        if (balanceAfterBuying.compareTo(BigDecimal.ZERO) < 0)
-            throw new InsufficientBalanceException();
+            BigDecimal balanceAfterBuying = clientFound.balance.subtract(amount);
 
-        clientFound.balance = balanceAfterBuying;
+            //CAN THE CLIENT PAY THIS?
+            if (balanceAfterBuying.compareTo(BigDecimal.ZERO) < 0)
+                throw new InsufficientBalanceException();
 
-        //AUDIT FIELDS
-        clientFound.updatedBy = username;
-        clientFound.updatedAt = Instant.now();
+            //AUDIT FIELDS
+            clientFound.updatedBy = username;
+            clientFound.updatedAt = Instant.now();
 
-        _clientRepository.update(clientFound);
+            Client clientUpdated = _clientRepository.debitAtomicUpdate(clientFound, amount);
 
-        return ClientResponseDTO.TurnIntoDTO(clientFound);
+            if (clientUpdated == null)
+            {
+                retry++;
+                continue;
+            }
+
+            return ClientResponseDTO.TurnIntoDTO(clientUpdated);
+
+        } while (retry < 3);
+
+        throw new ConflictUpdateException();
+
+
     }
 
 
@@ -99,15 +114,16 @@ public class ClientService {
     {
         Client clientFound = findValidClient(id);
 
-        clientFound.balance = clientFound.balance.add(amount);
-
         //AUDIT FIELDS
         clientFound.updatedBy = username;
         clientFound.updatedAt = Instant.now();
 
-        _clientRepository.update(clientFound);
+        Client clientUpdated = _clientRepository.creditAtomicUpdate(clientFound,amount);
 
-        return ClientResponseDTO.TurnIntoDTO(clientFound);
+        if (clientUpdated == null)
+            throw new ClientNotFoundException(id);
+
+        return ClientResponseDTO.TurnIntoDTO(clientUpdated);
     }
 
 
@@ -120,7 +136,10 @@ public class ClientService {
 
         mapRequestUpdateToClient(clientFound, requestClient, username);
 
-        _clientRepository.update(clientFound);
+        long commit = _clientRepository.fieldsAtomicUpdate(clientFound);
+
+        if (commit == 0)
+            throw new ClientNotFoundException(id);
 
         return ClientResponseDTO.TurnIntoDTO(clientFound);
     }
@@ -135,8 +154,10 @@ public class ClientService {
         clientFound.updatedBy = username;
         clientFound.updatedAt = Instant.now();
 
-        _clientRepository.update(clientFound);
+        long commit = _clientRepository.deleteAtomicUpdate(clientFound);
 
+        if (commit == 0)
+            throw new ClientNotFoundException(id);
     }
 
 
