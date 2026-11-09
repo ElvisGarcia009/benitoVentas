@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @ApplicationScoped
@@ -44,6 +45,21 @@ public class ProductService {
     {
         Product productFound = findValidProduct(id);
         return ProductResponseDTO.TurnIntoDTO(productFound);
+    }
+
+
+    //GET PRODUCTS BY IDS
+    public List<ProductResponseDTO> getProductsByIds(List<ObjectId> ids)
+    {
+        List<Product> productsFound = findValidProducts(ids);
+        List<ProductResponseDTO> deliverProducts = new ArrayList<>();
+
+        for (Product product : productsFound)
+        {
+            deliverProducts.add(ProductResponseDTO.TurnIntoDTO(product));
+        }
+
+        return deliverProducts;
     }
 
 
@@ -112,5 +128,32 @@ public class ProductService {
             throw new ProductNotFoundException(id);
 
         return productContainer;
+    }
+
+
+    //FILTER INACTIVE OR NON-EXISTENT PRODUCTS
+    public List<Product> findValidProducts(List<ObjectId> ids)
+    {
+        List<Product> productContainer = _productRepository.findByIds(ids);
+
+        if (ids.size() != productContainer.size())
+            for (ObjectId id : ids)
+            {
+                if (productContainer.stream().noneMatch(product -> product.id.equals(id)))
+                    throw new ProductNotFoundException(id);
+            }
+
+        List<Product> validProducts = new ArrayList<>();
+
+        for (Product product : productContainer)
+        {
+            if (!product.status) {
+                throw new ProductNotFoundException(product.id);
+            }
+
+            validProducts.add(product);
+        }
+
+        return validProducts;
     }
 }

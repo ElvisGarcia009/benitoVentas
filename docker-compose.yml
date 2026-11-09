@@ -1,7 +1,7 @@
 services:
   mongodb:
     image: mongo:7
-    container_name: mongo-sales
+    container_name: mongo-sales-v2
     ports:
       - "27017:27017"
     environment:
@@ -11,7 +11,7 @@ services:
       - mongo-data:/data/db
   kafka:
     image: apache/kafka:3.9.0
-    container_name: kafka
+    container_name: kafka-v2
     ports:
       - "9092:9092"
     secrets:
@@ -42,7 +42,7 @@ services:
     build:
       context: ./sales-products
       dockerfile: src/main/docker/Dockerfile.jvm
-    container_name: sales-product
+    container_name: sales-product-mejoras
     ports:
       - "9080:8443"
     secrets:
@@ -63,7 +63,7 @@ services:
     build:
       context: ./sales-clients
       dockerfile: src/main/docker/Dockerfile.jvm
-    container_name: sales-clients
+    container_name: sales-clients-mejoras
     ports:
       - "9081:8443"
     secrets:
@@ -84,7 +84,7 @@ services:
     build:
       context: ./sales-orders
       dockerfile: src/main/docker/Dockerfile.jvm
-    container_name: sales-orders
+    container_name: sales-orders-mejoras
     ports:
       - "9082:8443"
     secrets:
@@ -116,7 +116,7 @@ services:
     build:
       context: ./sales-auth
       dockerfile: src/main/docker/Dockerfile.jvm
-    container_name: sales-auth
+    container_name: sales-auth-mejoras
     ports:
       - "9083:8443"
     secrets:

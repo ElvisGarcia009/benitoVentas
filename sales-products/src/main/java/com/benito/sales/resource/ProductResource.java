@@ -22,6 +22,9 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestResponse;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @Path("api/v1/product")
 @Produces(MediaType.APPLICATION_JSON)
@@ -59,16 +62,23 @@ public class ProductResource {
         return _productService.getProductById(validatedId);
     }
 
+
     //THIS RESOURCE IS USED BY sales-orders TO PROCESS ORDERS (NO RATE LIMIT REQUIRED)
     @GET
-    @Path("/internal/{id}")
+    @Path("/internal")
     @RolesAllowed("orderService")
-    public ProductResponseDTO getProductForService(@PathParam("id") String id)
+    public List<ProductResponseDTO> getProductsByIdsForService(@QueryParam("ids") List<String> ids)
     {
-        ObjectId validatedId = validateId(id);
+        List<ObjectId> validatedIds = new ArrayList<>();
+
+        for (String id : ids)
+        {
+            ObjectId validatedId = validateId(id);
+            validatedIds.add(validatedId);
+        }
 
         //Quarkus return this with a 200 status code
-        return _productService.getProductById(validatedId);
+        return _productService.getProductsByIds(validatedIds);
     }
 
 

@@ -26,7 +26,9 @@ import org.jboss.logging.Logger;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
 public class OrderService {
@@ -146,25 +148,36 @@ public class OrderService {
             //SERVICE REQUEST HIS OWN TOKEN
             String serviceToken = _serviceTokenProvider.getAuthorizationToken();
 
-            //GET THE PRODUCTS INFORMATION AND CALCULATE THE TOTALS
-            List<OrderProductRecord> productsWithInfo = new ArrayList<>();
-            BigDecimal orderTotal = BigDecimal.ZERO;
+            //GET THE PRODUCTS INFORMATION
+            List<ProductResponseDTO> productsInfo = getProducts(serviceToken, order.products.stream().toList());
 
+            //MAKING A "LOCKER" SO THE ORDERS CAN CONSULT THE PRODUCT INFO QUICKLY
+            Map<String, ProductResponseDTO> productsLocker = new HashMap<>();
+            for (ProductResponseDTO productInfo : productsInfo)
+            {
+                productsLocker.put(productInfo.id, productInfo);
+            }
+
+            //CONTAINERS FOR THE RESULTS
+            BigDecimal orderTotal = BigDecimal.ZERO;
+            List<OrderProductRecord> productsWithCalculations = new ArrayList<>();
+
+            //CALCULATIONS
             for (OrderProductRecord requestedProduct : order.products)
             {
-                ProductResponseDTO productFound = getProduct(serviceToken, requestedProduct.productId());
+                ProductResponseDTO productInfo = productsLocker.get(requestedProduct.productId());
 
-                BigDecimal totalPerProduct = productFound.price.multiply(BigDecimal.valueOf(requestedProduct.quantity()));
+                BigDecimal totalPerProduct = productInfo.price.multiply(BigDecimal.valueOf(requestedProduct.quantity()));
                 orderTotal = orderTotal.add(totalPerProduct);
 
-                productsWithInfo.add(new OrderProductRecord(productFound.id,
-                        productFound.name,
-                        productFound.price,
+                productsWithCalculations.add(new OrderProductRecord(productInfo.id,
+                        productInfo.name,
+                        productInfo.price,
                         requestedProduct.quantity(),
                         totalPerProduct));
             }
 
-            order.products = productsWithInfo;
+            order.products = productsWithCalculations;
             order.orderTotal = orderTotal;
 
             //CHARGE THE CLIENT WITH THE SERVICE OWN TOKEN
@@ -172,7 +185,7 @@ public class OrderService {
 
             order.orderStatus = OrderState.COMPLETED;
         }
-        catch (InsufficientBalanceException | ProductNotFoundException | InvalidIdException
+        catch (InsufficientBalanceException | ProductNotFoundException | InvalidProductIdException
                | ClientNotFoundException | ClientAccessDeniedException | ConflictUpdateException exception)
         {
             //BUSINESS ERRORS: THE ORDER IS REJECTED AND THE CONSUMER KEEPS GOING
@@ -249,19 +262,28 @@ public class OrderService {
         }
     }
 
-    //CALLS THE PRODUCTS SERVICE TO GET A PRODUCT
-    private ProductResponseDTO getProduct(String authorization, String productId)
+    //CALL THE PRODUCT SERVICE WITH AN ARRAY OF PRODUCTS
+    private List<ProductResponseDTO> getProducts(String authorization, List<OrderProductRecord> products)
     {
+        List<String> productsIds = products.stream().map(OrderProductRecord::productId).toList();
+
         try
         {
-            return _productsApi.getProductById(authorization, productId);
+            return _productsApi.getProductsByIdsForService(authorization, productsIds);
         }
         catch (WebApplicationException exception)
         {
+
             switch (exception.getResponse().getStatus())
             {
-                case 404: throw new ProductNotFoundException(productId);
-                case 400: throw new InvalidIdException(productId);
+                case 404: {
+                    ErrorDTO error = exception.getResponse().readEntity(ErrorDTO.class);
+                    throw new ProductNotFoundException(error.errorMessage);
+                }
+                case 400: {
+                    ErrorDTO error = exception.getResponse().readEntity(ErrorDTO.class);
+                    throw new InvalidProductIdException(error.errorMessage);
+                }
                 default: throw new ExternalServiceException("products");
             }
         }

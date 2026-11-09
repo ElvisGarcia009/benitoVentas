@@ -34,7 +34,7 @@ class OrderServiceTest {
         ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
 
         OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                                                fakeEmitter, fakeTokenProvider);
+                fakeEmitter, fakeTokenProvider);
 
         ObjectId id = new ObjectId();
 
@@ -52,7 +52,7 @@ class OrderServiceTest {
 
         when(fakeRepository.findById(id)).thenReturn(order);
         when(fakeTokenProvider.getAuthorizationToken()).thenReturn("Bearer token");
-        when(fakeProductsApi.getProductById("Bearer token", "p1")).thenReturn(product);
+        when(fakeProductsApi.getProductsByIdsForService("Bearer token", List.of("p1"))).thenReturn(List.of(product));
 
         //ACT
         service.processOrder(id);
@@ -74,7 +74,7 @@ class OrderServiceTest {
         ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
 
         OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                                                fakeEmitter, fakeTokenProvider);
+                fakeEmitter, fakeTokenProvider);
 
         ObjectId id = new ObjectId();
 
@@ -87,15 +87,15 @@ class OrderServiceTest {
 
         when(fakeRepository.findById(id)).thenReturn(order);
         when(fakeTokenProvider.getAuthorizationToken()).thenReturn("Bearer token");
-        when(fakeProductsApi.getProductById("Bearer token", "p1")).thenThrow(ProcessingException.class);
+        when(fakeProductsApi.getProductsByIdsForService("Bearer token", List.of("p1"))).thenThrow(ProcessingException.class);
 
         //ACT
         service.processOrder(id);
 
         //ASSERT
         assertAll(() -> assertEquals(OrderState.REJECTED, order.orderStatus),
-                  () -> assertEquals("The order could not be processed, please try again later",
-                                     order.rejectionReason));
+                () -> assertEquals("The order could not be processed, please try again later",
+                        order.rejectionReason));
 
         //THE CLIENT WAS NEVER CHARGED
         verify(fakeClientsApi, never()).debitBalance(any(), any(), any());
@@ -112,7 +112,7 @@ class OrderServiceTest {
         ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
 
         OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                                                fakeEmitter, fakeTokenProvider);
+                fakeEmitter, fakeTokenProvider);
 
         ObjectId id = new ObjectId();
 
@@ -122,7 +122,7 @@ class OrderServiceTest {
         order.status = true;
         order.orderStatus = OrderState.COMPLETED;
         order.products = List.of(new OrderProductRecord("p1", null, null,
-                                                        1, null));
+                1, null));
 
         when(fakeRepository.findById(id)).thenReturn(order);
 
@@ -132,8 +132,8 @@ class OrderServiceTest {
         //ASSERT
         assertEquals(OrderState.COMPLETED, order.orderStatus);
 
-        //NOTHING WAS DONE: NO PRODUCTS LOOKUP AND NO CHARGE
-        verify(fakeProductsApi, never()).getProductById(any(), any());
+        //NOTHING WAS DONE, NO PRODUCTS LOOKUP AND NO CHARGE
+        verify(fakeProductsApi, never()).getProductsByIdsForService(any(), any());
         verify(fakeClientsApi, never()).debitBalance(any(), any(), any());
     }
 }
