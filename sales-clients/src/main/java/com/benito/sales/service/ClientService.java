@@ -71,15 +71,12 @@ public class ClientService {
     }
 
     //SUBTRACT AN AMOUNT FROM THE CLIENT'S BALANCE
-    public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount,
-                                          String callerUserId, boolean isPrivileged, String username)
+    public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount, String username)
     {
         int retry = 0;
-
         do
         {
             Client clientFound = findValidClient(id);
-            verifyClientAccess(clientFound, callerUserId, isPrivileged);
 
             BigDecimal balanceAfterBuying = clientFound.balance.subtract(amount);
 

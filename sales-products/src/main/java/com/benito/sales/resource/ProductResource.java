@@ -23,7 +23,6 @@ import org.jboss.resteasy.reactive.RestResponse;
 
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 @Path("api/v1/product")

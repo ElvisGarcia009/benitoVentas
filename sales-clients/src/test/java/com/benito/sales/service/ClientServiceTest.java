@@ -36,7 +36,7 @@ class ClientServiceTest {
 
         //ACT + ASSERT
         assertThrows(InsufficientBalanceException.class,
-                () -> service.debitBalance(id, toDebit, "user-1", false, "ana"));
+                () -> service.debitBalance(id, toDebit, "ana"));
 
         //THE BALANCE DID NOT CHANGE AND NOTHING WAS SAVED
         assertEquals(new BigDecimal("100.00"), client.balance);
@@ -70,8 +70,7 @@ class ClientServiceTest {
         when(fakeRepository.debitAtomicUpdate(client, amount)).thenReturn(expectedResult);
 
         //ACT
-        ClientResponseDTO clientResult = service.debitBalance(id, amount, "user-1",
-                                                            false, "ana");
+        ClientResponseDTO clientResult = service.debitBalance(id, amount, "ana");
 
         //ASSERT
         assertEquals(new BigDecimal("50.00"), clientResult.balance);
@@ -97,8 +96,7 @@ class ClientServiceTest {
         when(fakeRepository.debitAtomicUpdate(client, amount)).thenReturn(null);
 
         //ACT + ASSERT
-        assertThrows(ConflictUpdateException.class, () -> service.debitBalance(id, amount, "user-1",
-                false, "ana"));
+        assertThrows(ConflictUpdateException.class, () -> service.debitBalance(id, amount, "ana"));
 
         verify(fakeRepository, times(3)).debitAtomicUpdate(client, amount);
     }

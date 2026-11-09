@@ -97,16 +97,13 @@ public class ClientResource {
 
     @POST
     @Path("/{id}/balance/debit")
-    @RolesAllowed({"admin", "client", "orderService"})
+    @RolesAllowed({"admin", "orderService"})
     public ClientResponseDTO debitBalance(@PathParam("id") String id, @Valid BalanceRequestDTO requestBalance)
     {
         ObjectId validatedId = validateId(id);
 
-        boolean isPrivileged = jwt.getGroups().contains("admin") || jwt.getGroups().contains("orderService") ;
-
         //Quarkus return this with a 200 status code
-        return _clientService.debitBalance(validatedId, requestBalance.amount,
-                jwt.getClaim("userId"), isPrivileged, jwt.getSubject());
+        return _clientService.debitBalance(validatedId, requestBalance.amount, jwt.getSubject());
     }
 
     @POST
