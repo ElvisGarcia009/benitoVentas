@@ -1,18 +1,25 @@
 package com.benito.sales.service;
 
+import com.benito.sales.dto.KafkaDTO.OrderResultMessageDTO;
+import com.benito.sales.dto.OrderProductRecordRequestDTO;
+import com.benito.sales.dto.OrderRequestDTO;
+import com.benito.sales.dto.TemporalOrderResponseDTO;
+import com.benito.sales.dto.restClientDTO.ClientResponseDTO;
 import com.benito.sales.dto.restClientDTO.ProductResponseDTO;
 import com.benito.sales.entity.Order;
-import com.benito.sales.entity.OrderProductRecord;
 import com.benito.sales.entity.OrderState;
 import com.benito.sales.repository.OrderRepository;
 import com.benito.sales.restClient.ClientsApiClient;
 import com.benito.sales.restClient.ProductsApiClient;
-import jakarta.ws.rs.ProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bson.types.ObjectId;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
+import org.eclipse.microprofile.reactive.messaging.Message;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,117 +30,92 @@ class OrderServiceTest {
 
     //TESTING VITAL FUNCTIONS IN THE SERVICE
 
+    private final OrderRepository fakeRepository = mock(OrderRepository.class);
+    private final ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
+    private final ProductsApiClient fakeProductsApi = mock(ProductsApiClient.class);
+    @SuppressWarnings("unchecked")
+    private final Emitter<String> fakeEmitter = mock(Emitter.class);
+    private final ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
+
+    private final OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
+                                                          fakeEmitter, fakeTokenProvider, new ObjectMapper());
+
+
     @Test
-    void processOrder_completesTheOrder_everythingIsOk()
+    @SuppressWarnings("unchecked")
+    void createPurchaseOrder_savesPendingOrderAndQueuesThePayment_everythingIsOk()
     {
         //ARRANGE
-        OrderRepository fakeRepository = mock(OrderRepository.class);
-        ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
-        ProductsApiClient fakeProductsApi = mock(ProductsApiClient.class);
-        Emitter<String> fakeEmitter = mock(Emitter.class);
-        ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
-
-        OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                fakeEmitter, fakeTokenProvider);
-
-        ObjectId id = new ObjectId();
-
-        Order order = new Order();
-        order.id = id;
-        order.clientId = "client-1";
-        order.status = true;
-        order.orderStatus = OrderState.PENDING;
-        order.products = List.of(new OrderProductRecord("p1", null, null, 2, null));
+        ClientResponseDTO client = new ClientResponseDTO();
+        client.id = "client-1";
+        client.userId = "user-1";
 
         ProductResponseDTO product = new ProductResponseDTO();
         product.id = "p1";
         product.name = "Mouse";
         product.price = new BigDecimal("25.00");
 
-        when(fakeRepository.findById(id)).thenReturn(order);
-        when(fakeTokenProvider.getAuthorizationToken()).thenReturn("Bearer token");
-        when(fakeProductsApi.getProductsByIdsForService("Bearer token", List.of("p1"))).thenReturn(List.of(product));
+        OrderRequestDTO request = new OrderRequestDTO();
+        request.clientId = "client-1";
+        request.products = List.of(new OrderProductRecordRequestDTO("p1", 2));
+
+        when(fakeClientsApi.getClientById("Bearer user-token", "client-1")).thenReturn(client);
+        when(fakeTokenProvider.getAuthorizationToken()).thenReturn("Bearer service-token");
+        when(fakeProductsApi.getProductsByIdsForService("Bearer service-token", List.of("p1"))).thenReturn(List.of(product));
+
+        //MONGO GIVES THE ORDER ITS ID WHEN IT IS SAVED
+        doAnswer(invocation -> { ((Order) invocation.getArgument(0)).id = new ObjectId(); return null; })
+                .when(fakeRepository).persist(any(Order.class));
 
         //ACT
-        service.processOrder(id);
+        TemporalOrderResponseDTO result = service.createPurchaseOrder(request, "user-token", "ana");
 
-        //ASSERT
-        assertAll(() -> assertEquals(OrderState.COMPLETED, order.orderStatus),
-                () -> assertEquals(new BigDecimal("50.00"), order.orderTotal),
-                () -> assertEquals("Mouse", order.products.getFirst().productName()));
+        //ASSERT: THE ORDER IS PENDING, THE CLIENT IS LOOKED UP WITH THE CALLER'S TOKEN
+        //AND THE PAYMENT MESSAGE HAS THE CLIENT, THE ORDER AND THE TOTAL (2 x 25 = 50)
+        ArgumentCaptor<Message<String>> sent = ArgumentCaptor.forClass(Message.class);
+        verify(fakeEmitter).send(sent.capture());
+        String message = sent.getValue().getPayload();
+
+        assertAll(() -> assertEquals(OrderState.PENDING, result.orderStatus),
+                  () -> verify(fakeClientsApi).getClientById("Bearer user-token", "client-1"),
+                  () -> assertTrue(message.contains("\"clientId\":\"client-1\"")),
+                  () -> assertTrue(message.contains("\"orderId\":\"" + result.id + "\"")),
+                  () -> assertTrue(message.contains("\"amount\":50.00")));
     }
 
     @Test
-    void processOrder_rejectsTheOrder_productsServiceIsDown()
+    void applyOrderResult_updatesThePendingOrder_resultIsCompleted()
     {
         //ARRANGE
-        OrderRepository fakeRepository = mock(OrderRepository.class);
-        ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
-        ProductsApiClient fakeProductsApi = mock(ProductsApiClient.class);
-        Emitter<String> fakeEmitter = mock(Emitter.class);
-        ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
-
-        OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                fakeEmitter, fakeTokenProvider);
-
         ObjectId id = new ObjectId();
-
-        Order order = new Order();
-        order.id = id;
-        order.clientId = "client-1";
-        order.status = true;
-        order.orderStatus = OrderState.PENDING;
-        order.products = List.of(new OrderProductRecord("p1", null, null, 1, null));
-
-        when(fakeRepository.findById(id)).thenReturn(order);
-        when(fakeTokenProvider.getAuthorizationToken()).thenReturn("Bearer token");
-        when(fakeProductsApi.getProductsByIdsForService("Bearer token", List.of("p1"))).thenThrow(ProcessingException.class);
+        when(fakeRepository.applyResult(eq(id), eq(OrderState.COMPLETED), isNull(), eq("orders-service"), any(Instant.class)))
+                .thenReturn(1L);
 
         //ACT
-        service.processOrder(id);
+        service.applyOrderResult(new OrderResultMessageDTO(id.toString(), "COMPLETED", null));
 
         //ASSERT
-        assertAll(() -> assertEquals(OrderState.REJECTED, order.orderStatus),
-                () -> assertEquals("The order could not be processed, please try again later",
-                        order.rejectionReason));
-
-        //THE CLIENT WAS NEVER CHARGED
-        verify(fakeClientsApi, never()).debitBalance(any(), any(), any());
+        verify(fakeRepository).applyResult(eq(id), eq(OrderState.COMPLETED), isNull(), eq("orders-service"), any(Instant.class));
     }
 
     @Test
-    void processOrder_doesNothing_orderAlreadyProcessed()
+    void applyOrderResult_doesNotFail_resultArrivesTwice()
     {
-        //ARRANGE
-        OrderRepository fakeRepository = mock(OrderRepository.class);
-        ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
-        ProductsApiClient fakeProductsApi = mock(ProductsApiClient.class);
-        Emitter<String> fakeEmitter = mock(Emitter.class);
-        ServiceTokenProvider fakeTokenProvider = mock(ServiceTokenProvider.class);
-
-        OrderService service = new OrderService(fakeRepository, fakeClientsApi, fakeProductsApi,
-                fakeEmitter, fakeTokenProvider);
-
+        //ARRANGE: THE ORDER IS NOT PENDING ANYMORE, SO THE ATOMIC UPDATE CHANGES NOTHING
         ObjectId id = new ObjectId();
+        when(fakeRepository.applyResult(any(), any(), any(), any(), any())).thenReturn(0L);
 
-        Order order = new Order();
-        order.id = id;
-        order.clientId = "client-1";
-        order.status = true;
-        order.orderStatus = OrderState.COMPLETED;
-        order.products = List.of(new OrderProductRecord("p1", null, null,
-                1, null));
+        //ACT + ASSERT: THE DUPLICATED MESSAGE IS SIMPLY IGNORED
+        assertDoesNotThrow(() -> service.applyOrderResult(new OrderResultMessageDTO(id.toString(), "REJECTED", "No balance")));
+    }
 
-        when(fakeRepository.findById(id)).thenReturn(order);
-
+    @Test
+    void applyOrderResult_ignoresTheMessage_unknownStatus()
+    {
         //ACT
-        service.processOrder(id);
+        service.applyOrderResult(new OrderResultMessageDTO(new ObjectId().toString(), "BANANA", null));
 
         //ASSERT
-        assertEquals(OrderState.COMPLETED, order.orderStatus);
-
-        //NOTHING WAS DONE, NO PRODUCTS LOOKUP AND NO CHARGE
-        verify(fakeProductsApi, never()).getProductsByIdsForService(any(), any());
-        verify(fakeClientsApi, never()).debitBalance(any(), any(), any());
+        verify(fakeRepository, never()).applyResult(any(), any(), any(), any(), any());
     }
 }

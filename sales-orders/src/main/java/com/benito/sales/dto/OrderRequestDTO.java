@@ -15,7 +15,7 @@ public class OrderRequestDTO {
     public List<@Valid OrderProductRecordRequestDTO> products;
 
     @AssertTrue(message = "Products cannot contain duplicate IDs")
-    public boolean checkProductIdsUnique()
+    public boolean isProductIdsUnique()
     {
         if (products == null)
             return true;

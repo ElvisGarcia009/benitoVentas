@@ -97,13 +97,13 @@ public class ClientResource {
 
     @POST
     @Path("/{id}/balance/debit")
-    @RolesAllowed({"admin", "orderService"})
+    @RolesAllowed({"admin", "paymentService"})
     public ClientResponseDTO debitBalance(@PathParam("id") String id, @Valid BalanceRequestDTO requestBalance)
     {
         ObjectId validatedId = validateId(id);
 
         //Quarkus return this with a 200 status code
-        return _clientService.debitBalance(validatedId, requestBalance.amount, jwt.getSubject());
+        return _clientService.debitBalance(validatedId, requestBalance.amount, requestBalance.orderId, jwt.getSubject());
     }
 
     @POST

@@ -36,11 +36,11 @@ class ClientServiceTest {
 
         //ACT + ASSERT
         assertThrows(InsufficientBalanceException.class,
-                () -> service.debitBalance(id, toDebit, "ana"));
+                () -> service.debitBalance(id, toDebit, null, "ana"));
 
         //THE BALANCE DID NOT CHANGE AND NOTHING WAS SAVED
         assertEquals(new BigDecimal("100.00"), client.balance);
-        verify(fakeRepository, never()).debitAtomicUpdate(any(Client.class), any(BigDecimal.class));
+        verify(fakeRepository, never()).debitAtomicUpdate(any(Client.class), any(BigDecimal.class), any());
     }
 
     @Test
@@ -67,14 +67,14 @@ class ClientServiceTest {
 
 
         when(fakeRepository.findById(id)).thenReturn(client);
-        when(fakeRepository.debitAtomicUpdate(client, amount)).thenReturn(expectedResult);
+        when(fakeRepository.debitAtomicUpdate(client, amount, null)).thenReturn(expectedResult);
 
         //ACT
-        ClientResponseDTO clientResult = service.debitBalance(id, amount, "ana");
+        ClientResponseDTO clientResult = service.debitBalance(id, amount, null, "ana");
 
         //ASSERT
         assertEquals(new BigDecimal("50.00"), clientResult.balance);
-        verify(fakeRepository, times(1)).debitAtomicUpdate(client, amount);
+        verify(fakeRepository, times(1)).debitAtomicUpdate(client, amount, null);
     }
 
     @Test
@@ -93,11 +93,37 @@ class ClientServiceTest {
         BigDecimal amount = new BigDecimal("30.00");
 
         when(fakeRepository.findById(id)).thenReturn(client);
-        when(fakeRepository.debitAtomicUpdate(client, amount)).thenReturn(null);
+        when(fakeRepository.debitAtomicUpdate(client, amount, null)).thenReturn(null);
 
         //ACT + ASSERT
-        assertThrows(ConflictUpdateException.class, () -> service.debitBalance(id, amount, "ana"));
+        assertThrows(ConflictUpdateException.class, () -> service.debitBalance(id, amount, null, "ana"));
 
-        verify(fakeRepository, times(3)).debitAtomicUpdate(client, amount);
+        verify(fakeRepository, times(3)).debitAtomicUpdate(client, amount, null);
+    }
+
+    @Test
+    void debitBalance_doesNotChargeTwice_orderAlreadyCharged()
+    {
+        //ARRANGE: THE CLIENT ALREADY PAID ORDER
+        ClientRepository fakeRepository = mock(ClientRepository.class);
+        ClientService service = new ClientService(fakeRepository);
+        ObjectId id = new ObjectId();
+
+        Client client = new Client();
+        client.id = id;
+        client.userId = "user-1";
+        client.status = true;
+        client.balance = new BigDecimal("70.00");
+        client.processedOrders = new java.util.ArrayList<>(java.util.List.of("order-1"));
+
+        when(fakeRepository.findById(id)).thenReturn(client);
+
+        //ACT: THE SAME ORDER ASKS TO BE CHARGED AGAIN
+        ClientResponseDTO result = service.debitBalance(id, new BigDecimal("30.00"),
+                                                        "order-1", "orders-processor");
+
+        //ASSERT: NOTHING IS CHARGED
+        assertEquals(new BigDecimal("70.00"), result.balance);
+        verify(fakeRepository, never()).debitAtomicUpdate(any(Client.class), any(BigDecimal.class), any());
     }
 }

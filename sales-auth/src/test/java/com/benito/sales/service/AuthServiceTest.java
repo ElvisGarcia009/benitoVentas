@@ -18,7 +18,7 @@ class AuthServiceTest {
         //ARRANGE
         UserRepository fakeRepository = mock(UserRepository.class);
         ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
-        AuthService service = new AuthService(fakeRepository, fakeClientsApi, "the-secret");
+        AuthService service = new AuthService(fakeRepository, fakeClientsApi, "the-secret", "processor-secret");
 
         //THE SECRET IS CORRECT
         ServiceTokenRequestDTO request = new ServiceTokenRequestDTO();
@@ -39,7 +39,7 @@ class AuthServiceTest {
         //ARRANGE
         UserRepository fakeRepository = mock(UserRepository.class);
         ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
-        AuthService service = new AuthService(fakeRepository, fakeClientsApi, "the-secret");
+        AuthService service = new AuthService(fakeRepository, fakeClientsApi, "the-secret", "processor-secret");
 
         //THE SECRET IS WRONG
         ServiceTokenRequestDTO request = new ServiceTokenRequestDTO();
@@ -50,6 +50,26 @@ class AuthServiceTest {
         String callerCertificateName = "CN=sales-orders";
 
         //ACT + ASSERT
+        assertThrows(InvalidServiceCredentialsException.class,
+                     () -> service.issueServiceToken(request, callerCertificateName));
+    }
+
+    @Test
+    void issueServiceToken_throwsException_ordersCertificateAsksForProcessorToken()
+    {
+        //ARRANGE
+        UserRepository fakeRepository = mock(UserRepository.class);
+        ClientsApiClient fakeClientsApi = mock(ClientsApiClient.class);
+        AuthService service = new AuthService(fakeRepository, fakeClientsApi, "the-secret", "processor-secret");
+
+        //SOMEONE WITH THE ORDERS CERTIFICATE TRIES TO GET THE PROCESSOR TOKEN (THE ONE THAT CAN CHARGE CLIENTS)
+        ServiceTokenRequestDTO request = new ServiceTokenRequestDTO();
+        request.serviceName = "order-processor";
+        request.secret = "processor-secret";
+
+        String callerCertificateName = "CN=sales-orders";
+
+        //ACT + ASSERT: EACH SERVICE CAN ONLY GET ITS OWN TOKEN
         assertThrows(InvalidServiceCredentialsException.class,
                      () -> service.issueServiceToken(request, callerCertificateName));
     }

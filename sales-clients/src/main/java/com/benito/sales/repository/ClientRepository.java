@@ -13,23 +13,41 @@ import java.math.BigDecimal;
 @ApplicationScoped
 public class ClientRepository implements PanacheMongoRepository<Client> {
 
-    public Client debitAtomicUpdate(Client client, BigDecimal amount)
+    public Client debitAtomicUpdate(Client client, BigDecimal amount, String orderId)
     {
-        return mongoCollection().findOneAndUpdate(
-
-                Filters.and(
-                        Filters.eq("_id", client.id),
-                        Filters.eq("status", true),
-                        Filters.gte("balance", amount)
-                ),
-                Updates.combine(
-                        Updates.inc("balance", amount.negate()),
-                        Updates.set("updatedBy", client.updatedBy),
-                        Updates.set("updatedAt", client.updatedAt)
-                ),
-
-                new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)
-        );
+        //IF THE DEBIT COMES FROM AN ORDER: ONLY IF THAT ORDER WAS NOT CHARGED YET, AND WE WRITE IT DOWN IN THE SAME OPERATION
+        if (orderId != null)
+        {
+            return mongoCollection().findOneAndUpdate(
+                    Filters.and(
+                            Filters.eq("_id", client.id),
+                            Filters.eq("status", true),
+                            Filters.gte("balance", amount),
+                            Filters.ne("processedOrders", orderId)
+                    ),
+                    Updates.combine(
+                            Updates.inc("balance", amount.negate()),
+                            Updates.set("updatedBy", client.updatedBy),
+                            Updates.set("updatedAt", client.updatedAt),
+                            Updates.push("processedOrders", orderId)),
+                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)
+            );
+        }
+        else
+        {
+            return mongoCollection().findOneAndUpdate(
+                    Filters.and(
+                            Filters.eq("_id", client.id),
+                            Filters.eq("status", true),
+                            Filters.gte("balance", amount)
+                    ),
+                    Updates.combine(
+                            Updates.inc("balance", amount.negate()),
+                            Updates.set("updatedBy", client.updatedBy),
+                            Updates.set("updatedAt", client.updatedAt)),
+                    new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)
+            );
+        }
     }
 
     public Client creditAtomicUpdate(Client client, BigDecimal amount)

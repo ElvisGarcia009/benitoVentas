@@ -71,12 +71,17 @@ public class ClientService {
     }
 
     //SUBTRACT AN AMOUNT FROM THE CLIENT'S BALANCE
-    public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount, String username)
+    public ClientResponseDTO debitBalance(ObjectId id, BigDecimal amount, String orderId, String username)
     {
         int retry = 0;
+
         do
         {
             Client clientFound = findValidClient(id);
+
+            //IDEMPOTENCY: THIS ORDER WAS ALREADY CHARGED, SO WE DON'T CHARGE IT AGAIN
+            if (orderId != null && clientFound.processedOrders != null && clientFound.processedOrders.contains(orderId))
+                return ClientResponseDTO.TurnIntoDTO(clientFound);
 
             BigDecimal balanceAfterBuying = clientFound.balance.subtract(amount);
 
@@ -88,7 +93,7 @@ public class ClientService {
             clientFound.updatedBy = username;
             clientFound.updatedAt = Instant.now();
 
-            Client clientUpdated = _clientRepository.debitAtomicUpdate(clientFound, amount);
+            Client clientUpdated = _clientRepository.debitAtomicUpdate(clientFound, amount, orderId);
 
             if (clientUpdated == null)
             {

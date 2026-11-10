@@ -1,6 +1,5 @@
 package com.benito.sales.restClient;
 
-import com.benito.sales.dto.restClientDTO.BalanceRequestDTO;
 import com.benito.sales.dto.restClientDTO.ClientResponseDTO;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -17,12 +16,4 @@ public interface ClientsApiClient {
     @Retry(maxRetries = 2, delay = 500, retryOn = ProcessingException.class)
     ClientResponseDTO getClientById(@HeaderParam("Authorization") String authorization,
                                     @PathParam("id") String id);
-
-    @POST
-    @Path("/{id}/balance/debit")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    ClientResponseDTO debitBalance(@HeaderParam("Authorization") String authorization,
-                                   @PathParam("id") String id,
-                                   BalanceRequestDTO requestBalance);
 }

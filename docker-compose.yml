@@ -136,9 +136,35 @@ services:
       SMALLRYE_JWT_SIGN_KEY_LOCATION: /run/secrets/jwt_private_key
       MP_JWT_VERIFY_PUBLICKEY_LOCATION: /run/secrets/jwt_public_key
       ORDERS_SERVICE_SECRET: ${ORDERS_SERVICE_SECRET:-OrderService1994*}
+      PROCESSOR_SERVICE_SECRET: ${PROCESSOR_SERVICE_SECRET:-ProcessorService2026*}
     depends_on:
       - mongodb
       - sales-clients
+  sales-order-processor:
+    build:
+      context: ./sales-order-processor
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: sales-order-processor-mejoras
+    secrets:
+      - source: tls_ca
+        target: tls_ca
+      - source: processor_cert
+        target: tls_cert
+      - source: processor_key
+        target: tls_key
+      - source: processor_kafka_pem
+        target: tls_kafka_pem
+    environment:
+      QUARKUS_MONGODB_CONNECTION_STRING: mongodb://admin:admin123@mongodb:27017
+      QUARKUS_REST_CLIENT_CLIENT_API_URL: https://sales-clients:8443
+      QUARKUS_REST_CLIENT_AUTH_API_URL: https://sales-auth:8443
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PROCESSOR_SERVICE_SECRET: ${PROCESSOR_SERVICE_SECRET:-ProcessorService2026*}
+    depends_on:
+      - mongodb
+      - kafka
+      - sales-clients
+      - sales-auth
 volumes:
   mongo-data:
 secrets:
@@ -168,3 +194,9 @@ secrets:
       file: ./secrets/tls/kafka.pem
     orders_kafka_pem:
       file: ./secrets/tls/orders.pem
+    processor_cert:
+      file: ./secrets/tls/order-processor.crt
+    processor_key:
+      file: ./secrets/tls/order-processor.key
+    processor_kafka_pem:
+      file: ./secrets/tls/order-processor.pem

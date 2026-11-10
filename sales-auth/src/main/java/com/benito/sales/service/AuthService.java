@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 @ApplicationScoped
@@ -32,15 +33,21 @@ public class AuthService {
     //DEPENDENCY INJECTION
     private final ClientsApiClient _clientsApiClient;
     private final UserRepository _userRepository;
-    private final String _ordersServiceSecret;
+    private final Map<String, ServiceIdentity> _services;
+
+    //EACH SERVICE THAT CAN ASK FOR A TOKEN: WHICH CERTIFICATE IT MUST PRESENT, ITS SECRET AND THE ROLE IT GETS
+    private record ServiceIdentity(String certificateName, String secret, String role) { }
 
     public AuthService(UserRepository userRepository,
                        @RestClient ClientsApiClient clientsApiClient,
-                       @ConfigProperty(name = "orders.service.secret") String ordersServiceSecret)
+                       @ConfigProperty(name = "orders.service.secret") String ordersServiceSecret,
+                       @ConfigProperty(name = "processor.service.secret") String processorServiceSecret)
     {
         this._clientsApiClient = clientsApiClient;
         this._userRepository = userRepository;
-        this._ordersServiceSecret = ordersServiceSecret;
+        this._services = Map.of(
+                "orders-service", new ServiceIdentity("CN=sales-orders", ordersServiceSecret, "orderService"),
+                "order-processor", new ServiceIdentity("CN=sales-order-processor", processorServiceSecret, "paymentService"));
     }
 
 
@@ -104,17 +111,19 @@ public class AuthService {
     //ISSUES A SHORT-LIVED TOKEN FOR AN INTERNAL SERVICE
     public TokenResponseDTO issueServiceToken(ServiceTokenRequestDTO request, String callerCertificateName)
     {
-        //THE CALLER MUST PRESENT THE ORDERS SERVICE CERTIFICATE, OTHERWISE THE SECRET IS NOT EVEN CHECKED
-        if (!"CN=sales-orders".equals(callerCertificateName))
+        ServiceIdentity service = _services.get(request.serviceName);
+
+        //THE CALLER MUST PRESENT THE CERTIFICATE OF THAT SERVICE, OTHERWISE THE SECRET IS NOT EVEN CHECKED
+        if (service == null || !service.certificateName().equals(callerCertificateName))
             throw new InvalidServiceCredentialsException();
 
         boolean validSecret = MessageDigest.isEqual(request.secret.getBytes(StandardCharsets.UTF_8),
-                _ordersServiceSecret.getBytes(StandardCharsets.UTF_8));
+                service.secret().getBytes(StandardCharsets.UTF_8));
 
-        if (!"orders-service".equals(request.serviceName) || !validSecret)
+        if (!validSecret)
             throw new InvalidServiceCredentialsException();
 
-        return  TokenGenerator.buildServiceToken(request.serviceName, Set.of("orderService"));
+        return  TokenGenerator.buildServiceToken(request.serviceName, Set.of(service.role()));
     }
 
 

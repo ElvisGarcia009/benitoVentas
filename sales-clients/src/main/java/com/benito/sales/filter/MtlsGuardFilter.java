@@ -23,7 +23,8 @@ public class MtlsGuardFilter {
 
         boolean isPrivileged = _identity.hasRole("admin")
                                 || _identity.hasRole("aService")
-                                || _identity.hasRole("orderService");
+                                || _identity.hasRole("orderService")
+                                || _identity.hasRole("paymentService");
 
         if (isPrivileged && !hasClientCertificate(context))
         {

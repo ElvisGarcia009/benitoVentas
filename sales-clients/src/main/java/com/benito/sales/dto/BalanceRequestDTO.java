@@ -10,4 +10,7 @@ public class BalanceRequestDTO {
     @NotNull(message = "amount cannot be null")
     @Positive(message = "amount must be greater than 0")
     public BigDecimal amount;
+
+    //OPTIONAL
+    public String orderId;
 }

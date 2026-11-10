@@ -1,7 +1,8 @@
 package com.benito.sales.service;
 
 import com.benito.sales.dto.*;
-import com.benito.sales.dto.restClientDTO.BalanceRequestDTO;
+import com.benito.sales.dto.KafkaDTO.OrderMessageDTO;
+import com.benito.sales.dto.KafkaDTO.OrderResultMessageDTO;
 import com.benito.sales.dto.restClientDTO.ClientResponseDTO;
 import com.benito.sales.dto.restClientDTO.ProductResponseDTO;
 import com.benito.sales.entity.Order;
@@ -11,6 +12,8 @@ import com.benito.sales.exception.*;
 import com.benito.sales.repository.OrderRepository;
 import com.benito.sales.restClient.ClientsApiClient;
 import com.benito.sales.restClient.ProductsApiClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.mongodb.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
 import io.smallrye.reactive.messaging.kafka.KafkaRecord;
@@ -41,18 +44,21 @@ public class OrderService {
     private final ProductsApiClient _productsApi;
     private final Emitter<String> _emitter;
     private final ServiceTokenProvider _serviceTokenProvider;
+    private final ObjectMapper _objectMapper;
 
     public OrderService(OrderRepository orderRepository,
                         @RestClient ClientsApiClient clientsApi,
                         @RestClient ProductsApiClient productsApi,
                         @Channel("orders-out") Emitter<String> emitter,
-                        ServiceTokenProvider serviceTokenProvider)
+                        ServiceTokenProvider serviceTokenProvider,
+                        ObjectMapper objectMapper)
     {
         this._orderRepository = orderRepository;
         this._clientsApi = clientsApi;
         this._productsApi = productsApi;
         this._emitter = emitter;
         this._serviceTokenProvider = serviceTokenProvider;
+        this._objectMapper = objectMapper;
     }
 
 
@@ -98,27 +104,50 @@ public class OrderService {
     }
 
 
-    //CREATE A PURCHASE ORDER (SAVE IT AS PENDING AND QUEUE IT IN KAFKA)
-    public TemporalOrderResponseDTO createPurchaseOrder(OrderRequestDTO requestOrder,
-                                                        String rawToken, String username)
+    //CREATE A PURCHASE ORDER (CALCULATE THE TOTAL, SAVE IT AS PENDING AND QUEUE THE PAYMENT IN KAFKA)
+    public TemporalOrderResponseDTO createPurchaseOrder(OrderRequestDTO requestOrder, String rawToken, String username)
     {
+        //GET CLIENT'S INFORMATION
         ClientResponseDTO clientFound = getClient("Bearer " + rawToken, requestOrder.clientId);
 
-        List<OrderProductRecord> requestedProducts = new ArrayList<>();
-        for (OrderProductRecordRequestDTO requestProduct : requestOrder.products)
+        //GET THE PRODUCT'S INFORMATION
+        String serviceToken = _serviceTokenProvider.getAuthorizationToken();
+        List<String> productsIds = requestOrder.products.stream().map(OrderProductRecordRequestDTO::productId).toList();
+
+        List<ProductResponseDTO> productsWithInfo = getProducts(serviceToken, productsIds);
+
+        //MAKING A "LOCKER" SO THE ORDERS CAN CONSULT THE PRODUCT INFO QUICKLY
+        Map<String, ProductResponseDTO> productsLocker = new HashMap<>();
+        for (ProductResponseDTO productInfo : productsWithInfo)
         {
-            requestedProducts.add(new OrderProductRecord(requestProduct.productId(),
-                                                         null,
-                                                         null,
-                                                         requestProduct.quantity(),
-                                                         null));
+            productsLocker.put(productInfo.id, productInfo);
+        }
+
+        //CONTAINERS FOR THE TOTALS
+        BigDecimal orderTotal = BigDecimal.ZERO;
+        List<OrderProductRecord> productsWithCalculations = new ArrayList<>();
+
+        //CALCULATIONS
+        for (OrderProductRecordRequestDTO requestedProduct : requestOrder.products)
+        {
+            ProductResponseDTO productInfo = productsLocker.get(requestedProduct.productId());
+
+            BigDecimal totalPerProduct = productInfo.price.multiply(BigDecimal.valueOf(requestedProduct.quantity()));
+            orderTotal = orderTotal.add(totalPerProduct);
+
+            productsWithCalculations.add(new OrderProductRecord(productInfo.id,
+                    productInfo.name,
+                    productInfo.price,
+                    requestedProduct.quantity(),
+                    totalPerProduct));
         }
 
         Order newOrder = new Order();
         newOrder.clientId = clientFound.id;
         newOrder.userId = clientFound.userId;
-        newOrder.products = requestedProducts;
+        newOrder.products = productsWithCalculations;
         newOrder.orderStatus = OrderState.PENDING;
+        newOrder.orderTotal = orderTotal;
 
         //AUDIT FIELDS
         newOrder.status = true;
@@ -127,84 +156,13 @@ public class OrderService {
 
         _orderRepository.persist(newOrder);
 
+        OrderMessageDTO messageToKafka = new OrderMessageDTO(newOrder.clientId, newOrder.id.toString(), newOrder.orderTotal);
+
         //NOTE: MESSAGE WITH KEY AND VALUE SO ALL THE ORDERS OF A CLIENT GO TO THE SAME PARTITION AND ARE PROCESSED IN ORDER
-        _emitter.send(KafkaRecord.of(newOrder.clientId, newOrder.id.toString()));
+        _emitter.send(KafkaRecord.of(messageToKafka.clientId, toJson(messageToKafka)));
 
         return TemporalOrderResponseDTO.TurnIntoDTO(newOrder);
     }
-
-
-    //PROCESS A QUEUED ORDER (CALLED BY THE KAFKA CONSUMER)
-    public void processOrder(ObjectId orderId)
-    {
-        Order order = _orderRepository.findById(orderId);
-
-        //IF THE ORDER WAS DEACTIVATED OR ALREADY PROCESSED, THERE IS NOTHING TO DO
-        if (order == null || !order.status || order.orderStatus != OrderState.PENDING)
-            return;
-
-        try
-        {
-            //SERVICE REQUEST HIS OWN TOKEN
-            String serviceToken = _serviceTokenProvider.getAuthorizationToken();
-
-            //GET THE PRODUCTS INFORMATION
-            List<ProductResponseDTO> productsInfo = getProducts(serviceToken, order.products.stream().toList());
-
-            //MAKING A "LOCKER" SO THE ORDERS CAN CONSULT THE PRODUCT INFO QUICKLY
-            Map<String, ProductResponseDTO> productsLocker = new HashMap<>();
-            for (ProductResponseDTO productInfo : productsInfo)
-            {
-                productsLocker.put(productInfo.id, productInfo);
-            }
-
-            //CONTAINERS FOR THE RESULTS
-            BigDecimal orderTotal = BigDecimal.ZERO;
-            List<OrderProductRecord> productsWithCalculations = new ArrayList<>();
-
-            //CALCULATIONS
-            for (OrderProductRecord requestedProduct : order.products)
-            {
-                ProductResponseDTO productInfo = productsLocker.get(requestedProduct.productId());
-
-                BigDecimal totalPerProduct = productInfo.price.multiply(BigDecimal.valueOf(requestedProduct.quantity()));
-                orderTotal = orderTotal.add(totalPerProduct);
-
-                productsWithCalculations.add(new OrderProductRecord(productInfo.id,
-                        productInfo.name,
-                        productInfo.price,
-                        requestedProduct.quantity(),
-                        totalPerProduct));
-            }
-
-            order.products = productsWithCalculations;
-            order.orderTotal = orderTotal;
-
-            //CHARGE THE CLIENT WITH THE SERVICE OWN TOKEN
-            chargeClient(serviceToken, order.clientId, orderTotal);
-
-            order.orderStatus = OrderState.COMPLETED;
-        }
-        catch (InsufficientBalanceException | ProductNotFoundException | InvalidProductIdException
-               | ClientNotFoundException | ClientAccessDeniedException | ConflictUpdateException exception)
-        {
-            //BUSINESS ERRORS: THE ORDER IS REJECTED AND THE CONSUMER KEEPS GOING
-            order.orderStatus = OrderState.REJECTED;
-            order.rejectionReason = exception.getMessage();
-        }
-        catch (RuntimeException exception)
-        {
-            //UNEXPECTED ERRORS: THE ORDER IS REJECTED AND THE MESSAGE GOES TO THE DEAD LETTER QUEUE
-            LOG.error("Unexpected error processing order " + orderId, exception);
-
-            order.orderStatus = OrderState.REJECTED;
-            order.rejectionReason = "The order could not be processed, please try again later";
-
-        }
-
-        saveProcessedOrder(order);
-    }
-
 
     //DELETE AN ORDER (this method just deactivate the order)
     public void deleteOrder(ObjectId id, String username)
@@ -221,6 +179,39 @@ public class OrderService {
 
 
 
+
+    //APPLY THE RESULT THAT SALES-ORDER-PROCESSOR PUBLISHED (CALLED BY THE KAFKA CONSUMER)
+    public void applyOrderResult(OrderResultMessageDTO result)
+    {
+        OrderState newState;
+
+        try
+        {
+            newState = OrderState.valueOf(result.status);
+        }
+        catch (IllegalArgumentException | NullPointerException exception)
+        {
+            LOG.error("Unknown status '" + result.status + "' for order " + result.orderId + ", the message is ignored");
+            return;
+        }
+
+        if (newState == OrderState.PENDING || !ObjectId.isValid(result.orderId))
+        {
+            LOG.error("Invalid result for order " + result.orderId + ", the message is ignored");
+            return;
+        }
+
+        //IT ONLY UPDATES THE ORDER IF IT IS STILL PENDING, IN ONE ATOMIC OPERATION.
+        long updated = _orderRepository.applyResult(new ObjectId(result.orderId), newState,
+                result.rejectionReason, "orders-service", Instant.now());
+
+        if (updated == 0)
+            LOG.info("Order " + result.orderId + " was already updated or does not exist, nothing to do");
+    }
+
+
+
+
     //HELPERS
     private Order findValidOrder(ObjectId id)
     {
@@ -232,12 +223,16 @@ public class OrderService {
         return orderContainer;
     }
 
-    private void saveProcessedOrder(Order order)
+    private String toJson(Object message)
     {
-        order.updatedBy = "orders-service";
-        order.updatedAt = Instant.now();
-
-        _orderRepository.update(order);
+        try
+        {
+            return _objectMapper.writeValueAsString(message);
+        }
+        catch (JsonProcessingException exception)
+        {
+            throw new IllegalStateException("The Kafka message could not be serialized", exception);
+        }
     }
 
     //CALLS THE CLIENTS SERVICE TO GET A CLIENT
@@ -263,10 +258,8 @@ public class OrderService {
     }
 
     //CALL THE PRODUCT SERVICE WITH AN ARRAY OF PRODUCTS
-    private List<ProductResponseDTO> getProducts(String authorization, List<OrderProductRecord> products)
+    private List<ProductResponseDTO> getProducts(String authorization, List<String> productsIds)
     {
-        List<String> productsIds = products.stream().map(OrderProductRecord::productId).toList();
-
         try
         {
             return _productsApi.getProductsByIdsForService(authorization, productsIds);
@@ -293,29 +286,7 @@ public class OrderService {
         }
     }
 
-    //CALLS THE CLIENTS SERVICE TO SUBTRACT THE ORDER TOTAL FROM THE CLIENT'S BALANCE
-    private void chargeClient(String authorization, String clientId, BigDecimal amount)
-    {
-        try
-        {
-            _clientsApi.debitBalance(authorization, clientId, new BalanceRequestDTO(amount));
-        }
-        catch (WebApplicationException exception)
-        {
-            switch (exception.getResponse().getStatus())
-            {
-                case 422: throw new InsufficientBalanceException();
-                case 404: throw new ClientNotFoundException(clientId);
-                case 403: throw new ClientAccessDeniedException();
-                case 409: throw new ConflictUpdateException();
-                default: throw new ExternalServiceException("clients");
-            }
-        }
-        catch (ProcessingException exception)
-        {
-            throw new ServiceNotAvailableException("clients");
-        }
-    }
+
 }
 
 
