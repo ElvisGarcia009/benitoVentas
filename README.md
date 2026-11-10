@@ -18,36 +18,53 @@ El sistema está dividido en **cinco servicios por dominio** (qué se maneja). L
 
 > **Rama `mejoras-post-entrega`.** Esta rama contiene mejoras hechas después de la entrega original (que está en `main`). El resumen de los cambios está en [Mejoras post-entrega](#mejoras-post-entrega).
 
-```
-                         ┌──────────────────┐
-     login / registro    │   sales-auth     │  emite los JWT (clave privada)
-   ─────────────────────▶│   usuarios       │──┐
-                         └──────────────────┘  │ crea la ficha del cliente
-                            ▲            ▲     ▼ (token de servicio)
-               token de     │            │ token de servicio
-               servicio     │            │
-┌──────────────────┐     ┌──────────────────┐ │   ┌──────────────────┐
-│  sales-products  │◀────│   sales-orders   │─┼──▶│  sales-clients   │
-│  catálogo        │ IDs │   órdenes        │ │   │  fichas y saldo  │
-└──────────────────┘     └──────────────────┘ │   └──────────────────┘
-                     publica │       ▲ consume │            ▲
-                    la orden ▼       │ el      │            │ cobra con el
-                         ┌───────────┴────┐    │            │ id de la orden
-                         │     Kafka      │    │            │
-                         │ order-requests │    │            │
-                         │ order-results  │    │            │
-                         └───────────┬────┘    │            │
-                         consume ▼   ▲ publica │            │
-                         ┌───────────┴──────────┴───────────┴─┐
-                         │       sales-order-processor        │
-                         │       cobra las órdenes            │
-                         └────────────────────────────────────┘
+```mermaid
+---
+config:
+  theme: dark
+  flowchart:
+    curve: step
+    padding: 20
+    nodeSpacing: 80
+    rankSpacing: 90
+    wrappingWidth: 300
+  themeVariables:
+    darkMode: true
+    background: "#0d1117"
+    primaryColor: "#1f1f1f"
+    primaryBorderColor: "#d0d0d0"
+    primaryTextColor: "#e6e6e6"
+    lineColor: "#d0d0d0"
+    edgeLabelBackground: "#555555"
+    fontFamily: "monospace"
+---
+flowchart LR
+    U([Usuario])
+    PROD[sales-products]
+    ORD[sales-orders]
+    AUTH[sales-auth]
+    K[(Kafka)]
+    PROC[sales-order-processor]
+    CLI[sales-clients]
 
-           Todos verifican los JWT con la clave pública
-                          ┌────────────┐
-                          │  MongoDB   │  una base de datos por servicio
-                          └────────────┘
+    U -- catálogo --> PROD
+    U -- compras --> ORD
+    U -- login / registro --> AUTH
+    U -- su ficha --> CLI
+
+    ORD -- productos por lotes --> PROD
+    ORD -- order-requests --> K
+    K -- order-results --> ORD
+    K -- order-requests --> PROC
+    PROC -- order-results --> K
+    ORD -- valida el cliente --> CLI
+    PROC -- debita el saldo --> CLI
+    AUTH -- crea la ficha --> CLI
 ```
+
+- Cada servicio tiene **su propia base de datos** en MongoDB.
+- Todos verifican los JWT con la **clave pública**; solo `sales-auth` tiene la privada.
+- Orders y el procesador piden a auth un **token de servicio** para llamar a los demás servicios (se ve en el diagrama de cada servicio).
 
 | Servicio | Responsabilidad | Base de datos | Puerto (local) | Puerto (Docker) |
 |---|---|---|---|---|

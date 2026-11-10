@@ -25,21 +25,34 @@ helper/      → ErrorResponseBuilder
 filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
-```
-                 POST /order
-Usuario ──▶ OrderResource ──▶ OrderService.createPurchaseOrder
-                                 │ 1. valida el cliente (token del usuario)  ──▶ sales-clients
-                                 │ 2. token de servicio                      ──▶ sales-auth
-                                 │ 3. todos los productos en una llamada     ──▶ sales-products
-                                 │ 4. calcula los totales y guarda en PENDING ──▶ MongoDB
-                                 │ 5. publica clientId, orderId y total
-                                 ▼
-                      Kafka (topic order-requests) ──▶ sales-order-processor cobra
-                                                              │
-                      Kafka (topic order-results)  ◀──────────┘
-                                 │
-                                 ▼
-          OrderResultConsumer ──▶ OrderService.applyOrderResult ──▶ MongoDB (COMPLETED / REJECTED)
+```mermaid
+---
+config:
+  theme: dark
+  flowchart:
+    curve: step
+    padding: 20
+    nodeSpacing: 80
+    rankSpacing: 90
+    wrappingWidth: 300
+  themeVariables:
+    darkMode: true
+    background: "#0d1117"
+    primaryColor: "#1f1f1f"
+    primaryBorderColor: "#d0d0d0"
+    primaryTextColor: "#e6e6e6"
+    lineColor: "#d0d0d0"
+    edgeLabelBackground: "#555555"
+    fontFamily: "monospace"
+---
+flowchart LR
+    U([Usuario]) -- crea y consulta órdenes --> ORD[sales-orders]
+    ORD -- valida el cliente --> CLI[sales-clients]
+    ORD -- token de servicio --> AUTH[sales-auth]
+    ORD -- productos por lotes --> PROD[sales-products]
+    ORD -- guarda y actualiza --> DB[(MongoDB<br/>ordersdb)]
+    ORD -- order-requests --> K[(Kafka)]
+    K -- order-results --> ORD
 ```
 
 ### La orden

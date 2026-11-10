@@ -19,8 +19,30 @@ helper/      → Utilidades compartidas (ErrorResponseBuilder)
 filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servicios
 ```
 
-```
-Usuario → ProductResource → ProductService → ProductRepository → MongoDB (productdb)
+```mermaid
+---
+config:
+  theme: dark
+  flowchart:
+    curve: step
+    padding: 20
+    nodeSpacing: 80
+    rankSpacing: 90
+    wrappingWidth: 300
+  themeVariables:
+    darkMode: true
+    background: "#0d1117"
+    primaryColor: "#1f1f1f"
+    primaryBorderColor: "#d0d0d0"
+    primaryTextColor: "#e6e6e6"
+    lineColor: "#d0d0d0"
+    edgeLabelBackground: "#555555"
+    fontFamily: "monospace"
+---
+flowchart LR
+    U([Usuario]) -- consulta el catálogo --> PROD[sales-products]
+    ORD[sales-orders] -- productos por lotes --> PROD
+    PROD --> DB[(MongoDB<br/>productdb)]
 ```
 
 ---

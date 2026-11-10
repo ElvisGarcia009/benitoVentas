@@ -32,17 +32,32 @@ restClient/  → Clientes HTTP hacia sales-clients y sales-auth
 exception/   → Excepciones de los otros servicios
 ```
 
-```
-sales-orders ──▶ Kafka (topic order-requests, key = clientId)
-                        │
-                        ▼
-        OrderProcessor ──▶ OrderProcessorService.processPayment
-                        │ 1. ¿esta orden ya se procesó? Si no, la guarda en PROCESSING (MongoDB)
-                        │ 2. token de servicio (paymentService)  ──▶ sales-auth
-                        │ 3. debita con el orderId               ──▶ sales-clients
-                        │ 4. guarda el resultado                 ──▶ MongoDB
-                        ▼
-              Kafka (topic order-results, key = orderId) ──▶ sales-orders actualiza la orden
+```mermaid
+---
+config:
+  theme: dark
+  flowchart:
+    curve: step
+    padding: 20
+    nodeSpacing: 80
+    rankSpacing: 90
+    wrappingWidth: 300
+  themeVariables:
+    darkMode: true
+    background: "#0d1117"
+    primaryColor: "#1f1f1f"
+    primaryBorderColor: "#d0d0d0"
+    primaryTextColor: "#e6e6e6"
+    lineColor: "#d0d0d0"
+    edgeLabelBackground: "#555555"
+    fontFamily: "monospace"
+---
+flowchart LR
+    K[(Kafka)] -- order-requests --> PROC[sales-order-processor]
+    PROC -- order-results --> K
+    PROC -- token de servicio --> AUTH[sales-auth]
+    PROC -- debita con el orderId --> CLI[sales-clients]
+    PROC -- registro de pagos --> DB[(MongoDB<br/>paymentsdb)]
 ```
 
 ### El registro de pago (`OrdersPayments`, colección `payments`)
