@@ -33,24 +33,29 @@ exception/   → Excepciones de los otros servicios
 ```
 
 ```
-sales-orders ──▶ Kafka (topic de órdenes, key = clientId)
+sales-orders ──▶ Kafka (topic order-requests, key = clientId)
                         │
                         ▼
         OrderProcessor ──▶ OrderProcessorService.processPayment
-                        │ 1. ¿esta orden ya se procesó? (MongoDB)
-                        │ 2. token de servicio      ──▶ sales-auth
-                        │ 3. debita con el orderId   ──▶ sales-clients
-                        │ 4. guarda el resultado    ──▶ MongoDB
+                        │ 1. ¿esta orden ya se procesó? Si no, la guarda en PROCESSING (MongoDB)
+                        │ 2. token de servicio (paymentService)  ──▶ sales-auth
+                        │ 3. debita con el orderId               ──▶ sales-clients
+                        │ 4. guarda el resultado                 ──▶ MongoDB
                         ▼
-              Kafka (topic de resultados) ──▶ sales-orders actualiza la orden
+              Kafka (topic order-results, key = orderId) ──▶ sales-orders actualiza la orden
 ```
 
-### El registro de pago (`OrdersPayments`)
+### El registro de pago (`OrdersPayments`, colección `payments`)
 
 | Campo | Descripción |
 |---|---|
-| `orderId` | Orden que se cobró |
-| `status` | Resultado del cobro: `COMPLETED` o `REJECTED` |
+| `orderId` | Orden que se cobra. Tiene **índice único**: no puede haber dos registros para la misma orden |
+| `clientId`, `amount` | A quién se cobra y cuánto |
+| `status` | `PROCESSING` (el cobro empezó), `COMPLETED` o `REJECTED` |
+| `rejectionReason` | Motivo del rechazo (solo si es `REJECTED`) |
+| `createdAt`, `updatedAt` | Auditoría |
+
+El índice único se crea al arrancar el servicio.
 
 Sirve para saber si una orden **ya se procesó**, y así no cobrarla dos veces si el mismo mensaje llega otra vez.
 
@@ -59,16 +64,18 @@ Sirve para saber si una orden **ya se procesó**, y así no cobrarla dos veces s
 ## Cómo se cobra una orden
 
 1. `OrderProcessor` recibe el mensaje con `clientId`, `orderId` y el total de la orden.
-2. **Busca si la orden ya se procesó.** Si ya tiene un resultado guardado, **no vuelve a cobrar**: solo publica otra vez ese resultado, por si el mensaje anterior se perdió.
-3. **Pide un token de servicio** a `sales-auth`.
+2. **Busca si la orden ya se procesó.** Si ya tiene un resultado guardado (`COMPLETED` o `REJECTED`), **no vuelve a cobrar**: solo publica otra vez ese resultado, por si el mensaje anterior se perdió. Si no existe, guarda el registro en `PROCESSING`.
+3. **Pide un token de servicio** a `sales-auth` (rol `paymentService`).
 4. **Debita el total** en `sales-clients`, enviando el `orderId`.
 5. Guarda el resultado y lo **publica** en el topic de resultados.
 
 | Resultado del débito | Qué pasa |
 |---|---|
 | Se cobró | Guarda y publica `COMPLETED` |
-| Saldo insuficiente (`422`) | Guarda y publica `REJECTED` con el motivo |
-| `sales-clients` no respondió (caído o timeout) | **No publica nada.** No se sabe si el cobro se aplicó, así que no se puede decir `REJECTED`. La excepción sube y el mensaje va a la **dead letter queue** |
+| Saldo insuficiente (`422`), ficha inexistente (`404`), acceso denegado (`403`) o conflicto (`409`) | Guarda y publica `REJECTED` con el motivo |
+| `sales-clients` no respondió (caído o timeout), incluso tras 2 reintentos | **No publica nada.** No se sabe si el cobro se aplicó, así que no se puede decir `REJECTED`. La excepción sube, el mensaje va a la **dead letter queue** y el registro queda en `PROCESSING` |
+
+Un registro en `PROCESSING` no bloquea nada: si el mensaje se reprocesa, el procesador vuelve a intentar el débito, y la llave de idempotencia de clients evita cobrar dos veces.
 
 ---
 
@@ -76,26 +83,28 @@ Sirve para saber si una orden **ya se procesó**, y así no cobrarla dos veces s
 
 Kafka entrega los mensajes **al menos una vez** (*at-least-once*): si el servicio se cae después de cobrar pero antes de confirmar el mensaje, ese mismo mensaje llega otra vez. Hay dos protecciones:
 
-1. **En este servicio:** el registro de `OrdersPayments`. Si la orden ya tiene un resultado, no se vuelve a cobrar.
+1. **En este servicio:** el registro de `OrdersPayments` (con índice único en `orderId`). Si la orden ya tiene un resultado, no se vuelve a cobrar.
 2. **En `sales-clients`:** el `orderId` viaja con el débito como **llave de idempotencia**. Clients guarda las órdenes que ya cobró a cada cliente, y lo comprueba **en la misma operación atómica** que resta el saldo. Si le llega el mismo `orderId` otra vez, no cobra y responde como un débito exitoso.
 
-Gracias a la segunda, reintentar un débito es seguro, incluso después de un timeout o al reprocesar un mensaje de la dead letter queue.
+Gracias a la segunda, reintentar un débito es seguro, incluso después de un timeout o al reprocesar un mensaje de la dead letter queue. Por eso el REST client de clients **sí reintenta** el débito (2 veces, cada 500 ms) cuando no hay respuesta.
 
 ---
 
 ## Configuración
 
-Las propiedades exactas están en `src/main/resources/application.properties`. Las piezas principales:
-
-| Pieza | Descripción |
+| Propiedad | Valor / descripción |
 |---|---|
-| HTTPS | Solo https (TLS/mTLS: ver el [README principal](../README.md#tls-y-mtls)). Expone `/q/health` |
-| MongoDB | Base propia, con la colección de registros de pago |
-| `sales-clients` y `sales-auth` | URLs de los REST clients. En Docker, por el nombre del servicio |
-| Kafka entrada | Topic de órdenes, con la estrategia `dead-letter-queue` |
-| Kafka salida | Topic de resultados, que consume `sales-orders` |
-| Kafka seguridad | `SSL` con el certificado del procesador y `ca.crt`: mTLS hacia Kafka |
-| Token de servicio | Secreto y certificado propios para pedir su token a `sales-auth` |
+| `quarkus.http.port` | `8085` en desarrollo. No tiene endpoints de negocio: solo `/q/health`. En Docker no se publica ningún puerto |
+| `quarkus.mongodb.database` | `paymentsdb` |
+| `quarkus.rest-client.client-api.url` | En desarrollo: `https://localhost:8081`. En Docker: `https://sales-clients:8443` |
+| `quarkus.rest-client.auth-api.url` | En desarrollo: `https://localhost:8083`. En Docker: `https://sales-auth:8443` |
+| `quarkus.rest-client.*.tls-configuration-name` | `internal`: presenta el certificado del procesador (`order-processor.crt`) (`CN=sales-order-processor`) a clients y auth |
+| `quarkus.rest-client.connect-timeout` / `read-timeout` | `2000` / `5000` ms |
+| `kafka.bootstrap.servers` | En desarrollo: `localhost:9092`. En Docker: `kafka:29092` |
+| `mp.messaging.incoming.orders-in.*` | Topic `order-requests`, grupo `orders-processor`, `concurrency=3` (un consumidor por partición), `auto.offset.reset=earliest`, `failure-strategy=dead-letter-queue` |
+| `mp.messaging.outgoing.order-results-out.*` | Topic `order-results`, que consume `sales-orders` |
+| `kafka.security.protocol` / `kafka.ssl.*` | `SSL` con `order-processor.pem` (certificado + llave) y `ca.crt`: mTLS hacia Kafka. En desarrollo, `PLAINTEXT` |
+| `processor.service.secret` | Secreto para pedir el token de servicio (en Docker: `PROCESSOR_SERVICE_SECRET`) |
 
 ---
 
@@ -106,3 +115,5 @@ Las propiedades exactas están en `src/main/resources/application.properties`. L
 - **Con un timeout no se rechaza la orden:** el resultado es incierto; decir `REJECTED` podría ser falso si el cobro sí se aplicó. El mensaje queda en la dead letter queue para reprocesarlo con seguridad.
 - **El resultado viaja por Kafka, no por HTTP:** `sales-orders` no necesita estar disponible en el momento del cobro; el resultado espera en el topic.
 - **La key sigue siendo el `clientId`:** las órdenes de un mismo cliente se cobran en orden, una detrás de otra.
+- **3 consumidores para 3 particiones:** más rendimiento sin perder el orden por cliente.
+- **El mensaje trae el total:** el procesador no lee la base de orders ni llama a products; cada servicio solo toca su propia base.

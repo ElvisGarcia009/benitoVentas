@@ -49,7 +49,7 @@ Ruta base: `/api/v1/product`
 |---|---|---|---|---|
 | `GET` | `/api/v1/product` | Público (con rate limit) | Lista los productos activos, paginados, por nombre | `200` |
 | `GET` | `/api/v1/product/{id}` | Público (con rate limit) | Obtiene un producto | `200` |
-| `GET` | `/api/v1/product/internal/{id}` | `orderService` + certificado | Igual que el anterior, sin rate limit. Lo usa `sales-orders` al procesar órdenes | `200` |
+| `GET` | `/api/v1/product/internal?ids=id1,id2` | `orderService` + certificado | Devuelve **varios productos en una sola llamada**, sin rate limit. Lo usa `sales-orders` al crear una orden. Si un ID no existe responde `404` nombrando ese ID; si un ID es inválido, `400` | `200` |
 | `POST` | `/api/v1/product` | `admin` | Crea un producto | `201` + `Location` |
 | `PUT` | `/api/v1/product/{id}` | `admin` | Reemplaza los datos de un producto | `200` |
 | `DELETE` | `/api/v1/product/{id}` | `admin` | Desactiva un producto (borrado lógico) | `204` |
@@ -126,3 +126,5 @@ Respuesta (`ProductResponseDTO`):
 
 
 - **Borrado lógico** y **campos de auditoría** (`createdBy`, `createdAt`, `updatedBy`, `updatedAt`), que no se exponen en la respuesta.
+
+- **Consulta por lotes para orders** (`/internal?ids=`): una orden con N productos hace **una** llamada HTTP y **una** consulta a MongoDB, en vez de N de cada una (el problema N+1).

@@ -50,6 +50,7 @@ filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servici
 | `quarkus.rest-client.client-api.url` | En desarrollo: `https://localhost:8081`. En Docker: `https://sales-clients:8443` |
 | `user.seeder.adminPassword` | Contraseña del administrador inicial (en Docker: `USER_SEEDER_ADMINPASSWORD`) |
 | `orders.service.secret` | Secreto que debe enviar `sales-orders` para pedir su token (en Docker: `ORDERS_SERVICE_SECRET`) |
+| `processor.service.secret` | Secreto que debe enviar `sales-order-processor` para pedir su token (en Docker: `PROCESSOR_SERVICE_SECRET`) |
 | `quarkus.rate-limiter.buckets.authentication.*` | 10 peticiones por segundo y 100 cada 5 minutos, por IP |
 | `quarkus.swagger-ui.always-include` | Swagger UI disponible también en Docker, en `/q/swagger-ui` |
 
@@ -64,9 +65,11 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 | Usuario | `username` | `userId` | Los del usuario | 15 minutos |
 | Servicio (auth) | `AuthService` | — | `aService` | 1 minuto |
 | Servicio (orders) | `orders-service` | — | `orderService` | 1 minuto |
+| Servicio (procesador) | `order-processor` | — | `paymentService` | 1 minuto |
 
 - `aService`: auth se lo firma a sí mismo para crear la ficha del cliente en `sales-clients` durante el registro.
-- `orderService`: lo pide `sales-orders` para leer los productos y cobrar el saldo cuando procesa una orden desde Kafka.
+- `orderService`: lo pide `sales-orders` para leer los productos (por lotes) al crear una orden.
+- `paymentService`: lo pide `sales-order-processor` para debitar el saldo cuando cobra una orden desde Kafka.
 
 ---
 
@@ -78,7 +81,7 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 |---|---|---|---|
 | `POST` | `/api/v1/auth/register` | Registra un cliente: crea el usuario y su ficha | `204` |
 | `POST` | `/api/v1/auth/login` | Devuelve un token de acceso | `200` |
-| `POST` | `/api/v1/auth/service-token` | Devuelve un token de servicio a `sales-orders` | `200` |
+| `POST` | `/api/v1/auth/service-token` | Devuelve un token de servicio a `sales-orders` o a `sales-order-processor` | `200` |
 
 **Registro:**
 
@@ -115,7 +118,14 @@ La clave privada **solo existe en este servicio** y no se versiona (`secrets/` e
 { "serviceName": "orders-service", "secret": "..." }
 ```
 
-Solo acepta a quien **presente el certificado de `sales-orders`** (mTLS) y envíe el secreto correcto; si falta cualquiera de los dos, responde el mismo `401`. Sin el certificado, ni siquiera se compara el secreto, así que no se puede adivinar a fuerza de intentos. El secreto se compara con `MessageDigest.isEqual`, que tarda lo mismo acierte o falle, para no dar pistas a quien intente adivinarlo.
+`serviceName` es `orders-service` o `order-processor`. Cada uno tiene su propio certificado y su propio secreto:
+
+| `serviceName` | Certificado que debe presentar | Rol que recibe |
+|---|---|---|
+| `orders-service` | `CN=sales-orders` | `orderService` |
+| `order-processor` | `CN=sales-order-processor` | `paymentService` |
+
+Solo acepta a quien **presente el certificado de ese servicio** (mTLS) y envíe el secreto correcto; si falta cualquiera de los dos, responde el mismo `401`. Sin el certificado, ni siquiera se compara el secreto, así que no se puede adivinar a fuerza de intentos. El secreto se compara con `MessageDigest.isEqual`, que tarda lo mismo acierte o falle, para no dar pistas a quien intente adivinarlo.
 
 ### Usuarios: `/api/v1/user`
 

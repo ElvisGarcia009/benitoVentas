@@ -1,6 +1,6 @@
 # sales-orders
 
-Microservicio de **órdenes de compra** de Benito Ventas. Recibe la orden, la encola en **Kafka** y la procesa en segundo plano: arma la orden con los datos reales de los productos, cobra el saldo del cliente y la marca como completada o rechazada.
+Microservicio de **órdenes de compra** de Benito Ventas. Recibe la orden, la valida, calcula su total con los datos reales de los productos y la publica en **Kafka** para que `sales-order-processor` la cobre. Después consume el resultado del cobro y marca la orden como completada o rechazada.
 
 ---
 
@@ -9,12 +9,13 @@ Microservicio de **órdenes de compra** de Benito Ventas. Recibe la orden, la en
 ```
 resource/    → Endpoints HTTP
 service/
-  OrderService         → Crear la orden (PENDING) y procesarla (COMPLETED / REJECTED)
-  ServiceTokenProvider → Pide a sales-auth el token de servicio para cobrar
-consumer/    → OrderConsumer: escucha Kafka y llama a OrderService.processOrder
+  OrderService         → Crear la orden (PENDING) y aplicar el resultado del cobro (COMPLETED / REJECTED)
+  ServiceTokenProvider → Pide a sales-auth el token de servicio para leer los productos
+consumer/    → OrderResultConsumer: escucha el topic order-results y llama a OrderService.applyOrderResult
 repository/  → Acceso a MongoDB (Panache)
 entity/      → Documento de Mongo (Order), sus líneas (OrderProductRecord) y el enum OrderState
 dto/         → Objetos de entrada y salida
+  KafkaDTO/      → Mensajes de Kafka (la orden publicada y el resultado del cobro)
   restClientDTO/ → Objetos para hablar con products, clients y auth
 restClient/  → Clientes HTTP hacia sales-products, sales-clients y sales-auth
 exception/   → Excepciones de negocio y de los otros servicios
@@ -27,18 +28,18 @@ filter/      → MtlsGuardFilter: exige certificado de cliente a admin y servici
 ```
                  POST /order
 Usuario ──▶ OrderResource ──▶ OrderService.createPurchaseOrder
-                                 │ 1. valida el cliente (token del usuario)
-                                 │ 2. guarda la orden en PENDING
-                                 │ 3. publica el id de la orden
+                                 │ 1. valida el cliente (token del usuario)  ──▶ sales-clients
+                                 │ 2. token de servicio                      ──▶ sales-auth
+                                 │ 3. todos los productos en una llamada     ──▶ sales-products
+                                 │ 4. calcula los totales y guarda en PENDING ──▶ MongoDB
+                                 │ 5. publica clientId, orderId y total
                                  ▼
-                      Kafka (topic order-requests)
+                      Kafka (topic order-requests) ──▶ sales-order-processor cobra
+                                                              │
+                      Kafka (topic order-results)  ◀──────────┘
                                  │
                                  ▼
-                 OrderConsumer ──▶ OrderService.processOrder
-                                 ├─▶ sales-products  (precios)
-                                 ├─▶ sales-auth      (token de servicio)
-                                 ├─▶ sales-clients   (cobro)
-                                 └─▶ MongoDB         (COMPLETED / REJECTED)
+          OrderResultConsumer ──▶ OrderService.applyOrderResult ──▶ MongoDB (COMPLETED / REJECTED)
 ```
 
 ### La orden
@@ -54,7 +55,7 @@ Usuario ──▶ OrderResource ──▶ OrderService.createPurchaseOrder
 | `rejectionReason` | Motivo del rechazo (solo si es `REJECTED`) |
 | `status` + auditoría | Borrado lógico, `createdBy`, `createdAt`, `updatedBy`, `updatedAt` |
 
-Las líneas son documentos **incrustados** dentro de la orden. Mientras la orden está en `PENDING`, las líneas solo tienen `productId` y `quantity`; nombre, precio y totales se completan al procesarla.
+Las líneas son documentos **incrustados** dentro de la orden. Nombre, precio y totales se calculan **al crear la orden**, así que ya están completos mientras está en `PENDING`.
 
 ---
 
@@ -69,10 +70,10 @@ Las líneas son documentos **incrustados** dentro de la orden. Mientras la orden
 | `quarkus.rest-client.auth-api.url` | En desarrollo: `https://localhost:8083`. En Docker: `https://sales-auth:8443` |
 | `quarkus.rest-client.connect-timeout` / `read-timeout` | `2000` / `5000` ms |
 | `kafka.bootstrap.servers` | En desarrollo: `localhost:9092`. En Docker: `kafka:29092` |
-| `mp.messaging.outgoing.orders-out.*` | Canal de salida al topic `order-requests` |
-| `mp.messaging.incoming.orders-in.*` | Canal de entrada del topic `order-requests`, grupo `orders-processor`, `auto.offset.reset=earliest`, `failure-strategy=dead-letter-queue` |
+| `mp.messaging.outgoing.orders-out.*` | Canal de salida al topic `order-requests` (lo consume `sales-order-processor`) |
+| `mp.messaging.incoming.order-results-in.*` | Canal de entrada del topic `order-results`, grupo `orders-results`, `auto.offset.reset=earliest`, `failure-strategy=dead-letter-queue` |
 | `kafka.security.protocol` / `kafka.ssl.*` | `SSL` con `orders.pem` (certificado + llave) y `ca.crt`: mTLS hacia Kafka. En desarrollo, `PLAINTEXT` |
-| `orders.service.secret` | Secreto para pedir el token de servicio (en Docker: `ORDERS_SERVICE_SECRET`) |
+| `orders.service.secret` | Secreto para pedir el token de servicio con el que lee los productos (en Docker: `ORDERS_SERVICE_SECRET`) |
 | `quarkus.kafka.health.enabled` | `true`: el health check también revisa Kafka |
 | `mp.jwt.verify.issuer` | `https://benito-ventas.app` |
 | `mp.jwt.verify.publickey.location` | En desarrollo: `src/main/resources/publicKey.pem`. En Docker: `/run/secrets/jwt_public_key` |
@@ -89,7 +90,7 @@ Ruta base: `/api/v1/order`
 | `GET` | `/api/v1/order` | `admin` | Lista todas las órdenes activas, de la más nueva a la más vieja | `200` |
 | `GET` | `/api/v1/order/me` | `client` | Lista las órdenes del cliente autenticado | `200` |
 | `GET` | `/api/v1/order/{id}` | `admin`, `client` (solo las suyas) | Obtiene una orden, con su estado | `200` |
-| `POST` | `/api/v1/order` | `admin`, `client` | Recibe la orden y la encola para procesarla | `202` |
+| `POST` | `/api/v1/order` | `admin`, `client` | Valida la orden, calcula su total y la publica para cobrarla | `202` |
 | `DELETE` | `/api/v1/order/{id}` | `admin` | Desactiva una orden (no reembolsa) | `204` |
 
 Los listados aceptan `page` (desde 0) y `pageSize` (1 a 30).
@@ -109,13 +110,13 @@ Los listados aceptan `page` (desde 0) y `pageSize` (1 a 30).
 | Campo | Regla |
 |---|---|
 | `clientId` | Obligatorio, id válido |
-| `products` | Al menos un producto |
-| `products[].productId` | Obligatorio |
+| `products` | Entre 1 y 30 productos, **sin repetir** el mismo `productId` |
+| `products[].productId` | Obligatorio, id válido |
 | `products[].quantity` | Mayor que 0 |
 
 El cliente solo manda **qué** quiere y **cuánto**. Nombre, precio y totales los obtiene y calcula el servicio, nunca se aceptan del body.
 
-Respuesta `202 Accepted` (la orden se recibió, pero todavía no se procesó):
+Respuesta `202 Accepted` (la orden se recibió y se validó, pero todavía no se cobró):
 
 ```json
 {
@@ -155,75 +156,80 @@ El cliente usa el `id` recibido para consultar el resultado:
 
 ### Parte 1: en la petición HTTP (síncrona)
 
-1. **Busca el cliente** en `sales-clients`, reenviando el token del usuario. Así valida que la ficha exista y que quien llama tenga acceso a ella. Si no, responde el error en ese momento (`403`, `404`...).
-2. **Guarda la orden** en estado `PENDING`.
-3. **Publica un mensaje en Kafka** (topic `order-requests`) y responde `202`.
+1. **Busca el cliente** en `sales-clients`, reenviando el token del usuario. Así valida que la ficha exista y que quien llama tenga acceso a ella.
+2. **Pide un token de servicio** a `sales-auth` (rol `orderService`).
+3. **Busca todos los productos en una sola llamada** al endpoint interno de `sales-products` (`/api/v1/product/internal?ids=...`, sin rate limit).
+4. **Calcula el total** de cada línea y el de la orden, y la **guarda** en estado `PENDING`.
+5. **Publica un mensaje en Kafka** (topic `order-requests`) y responde `202`.
 
-### Parte 2: en el consumidor (asíncrona)
+Si el cliente no existe, no tiene acceso, un producto no existe o un ID es inválido, responde el error **en ese momento** (`403`, `404`, `400`) y no se guarda ni se publica nada. El mensaje de error nombra el producto que falló.
 
-4. `OrderConsumer` recibe el mensaje y llama a `OrderService.processOrder`.
-5. Si la orden no existe, está desactivada o ya no está en `PENDING`, **no hace nada** (consumidor idempotente: procesar dos veces el mismo mensaje no cobra dos veces).
-6. **Pide un token de servicio** a `sales-auth` (uno por orden).
-7. **Busca cada producto** en el endpoint interno de `sales-products` (`/api/v1/product/internal/{id}`, sin rate limit) y calcula el total de cada línea y el de la orden.
-8. **Cobra el saldo** en `sales-clients` con el mismo token.
-9. Guarda la orden como `COMPLETED`.
+### Parte 2: el cobro (en `sales-order-processor`)
 
-Si algo falla:
+El procesador cobra el total al cliente y publica el resultado en el topic `order-results`. El detalle está en su [README](../sales-order-processor/README.md).
 
-| Tipo de error | Ejemplos | Qué pasa |
-|---|---|---|
-| De negocio | Saldo insuficiente, producto inexistente | `REJECTED` con el motivo en `rejectionReason` |
-| Técnico | Un servicio caído | Se reintenta 2 veces (solo leer productos y pedir el token; el cobro nunca). Si sigue caído: `REJECTED` con "The order could not be processed, please try again later" |
+### Parte 3: el resultado (asíncrona)
 
-La **dead letter queue** solo recibe mensajes cuya orden sigue en `PENDING` (por ejemplo, si falla MongoDB al guardar), así se pueden reprocesar.
+6. `OrderResultConsumer` recibe el resultado (`orderId`, estado y motivo) y llama a `OrderService.applyOrderResult`.
+7. Si el estado no es `COMPLETED` ni `REJECTED`, o el ID no es válido, lo ignora.
+8. Actualiza la orden **en una sola operación**, solo si sigue en `PENDING`. Si ya no lo está (el mismo resultado llegó dos veces), no cambia nada (**consumidor idempotente**).
 
-Una orden rechazada por saldo insuficiente conserva el total calculado (sirve para ver cuánto faltaba). Una rechazada por un producto inexistente queda con el total en `null`, porque falló antes de poder calcularlo.
+La **dead letter queue** recibe los resultados que no se pudieron guardar (por ejemplo, si falla MongoDB), así se pueden reprocesar.
 
-### El mensaje de Kafka
+### Los mensajes de Kafka
 
-| Parte | Valor | Por qué |
-|---|---|---|
-| Llave | `clientId` | Las órdenes de un mismo cliente caen en la misma partición y se procesan **en orden**, una detrás de otra. Así dos compras del mismo cliente no cobran el saldo al mismo tiempo |
-| Valor | `id` de la orden | El mensaje es pequeño; los datos viven en MongoDB |
+| Topic | Llave | Valor | Por qué |
+|---|---|---|---|
+| `order-requests` (publica) | `clientId` | `clientId`, `orderId` y el total | Las órdenes de un mismo cliente caen en la misma partición y se cobran **en orden**, una detrás de otra. El procesador no necesita leer la base de orders |
+| `order-results` (consume) | `orderId` | `orderId`, estado y `rejectionReason` | Lo justo para actualizar la orden |
 
 ---
 
 ## Errores
 
-Responden en la petición HTTP (antes de encolar):
+Responden en la petición HTTP (antes de publicar):
 
 | Situación | Status |
 |---|---|
 | Id inválido / datos inválidos | `400` |
 | Sin token / token inválido | `401` |
 | Rol no permitido / orden o ficha ajena | `403` |
-| Orden o cliente inexistente | `404` |
+| Orden, cliente o producto inexistente | `404` |
 | Un servicio respondió algo inesperado | `502` |
 | Un servicio no respondió (caído o timeout) | `503` |
 | Error inesperado | `500` |
 
-Los errores que ocurren al procesar (saldo insuficiente, producto inexistente) no se responden por HTTP: quedan en la orden como `REJECTED` + `rejectionReason`.
+Los errores del cobro (saldo insuficiente, ficha desactivada) no se responden por HTTP: quedan en la orden como `REJECTED` + `rejectionReason`.
 
 ---
 
 ## Decisiones de diseño
 
-- **Órdenes encoladas en Kafka (pub-sub)**: el usuario recibe respuesta rápida (`202`) aunque products o clients estén lentos, y las órdenes no se pierden si el procesamiento falla: quedan en el topic.
+- **Órdenes encoladas en Kafka (pub-sub)**: el usuario recibe respuesta rápida (`202`) aunque el cobro tarde, y las órdenes no se pierden si el cobro falla: quedan en el topic.
+
+
+- **El cobro vive en otro servicio** (`sales-order-processor`): la API y el cobro escalan, fallan y se despliegan por separado. Orders ya no llama a clients para cobrar.
+
+
+- **Validar y calcular al crear**: el cliente se entera al instante si un producto no existe, y el mensaje de Kafka ya lleva el total, así el procesador no depende de products ni de la base de orders.
 
 
 - **`REJECTED` en lugar de borrar**: antes, si el cobro fallaba, la orden se borraba. Ahora queda guardada con su motivo, así el cliente puede ver qué pasó.
 
 
-- **La validación del cliente es síncrona**: si alguien intenta comprar a nombre de otra ficha, se entera en el momento (`403`) y no se encola nada.
+- **La validación del cliente es síncrona**: si alguien intenta comprar a nombre de otra ficha, se entera en el momento (`403`) y no se publica nada.
 
 
-- **Token de servicio para procesar**: el consumidor no tiene el token del usuario (puede haber vencido). Por eso pide a `sales-auth` un token propio de 1 minuto con el rol `orderService`, que usa para leer productos y cobrar.
+- **Token de servicio para leer productos**: el endpoint interno de products solo acepta el rol `orderService`, así que orders pide a `sales-auth` un token propio de 1 minuto.
 
 
-- **Endpoint interno de productos**: el endpoint público tiene rate limit por IP, y todas las llamadas de orders vienen de la misma IP. Con el endpoint interno, el procesamiento de órdenes no compite con el límite de los usuarios.
+- **Endpoint interno de productos, por lotes**: el endpoint público tiene rate limit por IP, y todas las llamadas de orders vienen de la misma IP. Con el endpoint interno, crear órdenes no compite con el límite de los usuarios; y al pedir todos los IDs juntos, una orden con N productos hace una sola llamada (sin el problema N+1).
 
 
-- **Reintentar solo lo seguro**: leer un producto se puede repetir sin riesgo; cobrar no, porque si el cobro se hizo, pero la respuesta se perdió, reintentar cobraría dos veces.
+- **Reintentos**: leer el cliente, los productos y pedir el token se reintentan si el servicio no responde, porque repetirlos no tiene efectos.
+
+
+- **Resultado idempotente**: la actualización solo aplica si la orden sigue en `PENDING`, en una sola operación. Un resultado repetido no cambia nada.
 
 
 - **Snapshot del momento de la compra**: la orden guarda nombre y precio de cada producto. Si mañana el producto cambia, la orden sigue mostrando lo que se pagó.
